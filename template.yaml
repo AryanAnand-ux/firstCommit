@@ -469,6 +469,8 @@ Resources:
           - Id: S3Origin
             DomainName: !GetAtt FrontendBucket.RegionalDomainName
             OriginAccessControlId: !Ref FrontendOAC
+            S3OriginConfig:
+              OriginAccessIdentity: ''
         Enabled: true
         HttpVersion: http2
         DefaultRootObject: index.html
