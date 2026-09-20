@@ -89,6 +89,7 @@ const Auth = {
 
   signUp(email, password, isDonor) {
     return new Promise((resolve, reject) => {
+      if (!this._pool) return reject(new Error("Backend not configured yet — run deploy.ps1 first, then sign up."));
       const attrs = [new AmazonCognitoIdentity.CognitoUserAttribute({ Name: "custom:isDonor", Value: isDonor ? "1" : "0" })];
       this._pool.signUp(email, password, attrs, null, (err) => (err ? reject(err) : resolve()));
     });
@@ -96,6 +97,7 @@ const Auth = {
 
   confirm(email, code) {
     return new Promise((resolve, reject) => {
+      if (!this._pool) return reject(new Error("Backend not configured yet — run deploy.ps1 first."));
       const u = new AmazonCognitoIdentity.CognitoUser({ Username: email, Pool: this._pool });
       u.confirmRegistration(code, true, (err) => (err ? reject(err) : resolve()));
     });
@@ -105,6 +107,7 @@ const Auth = {
     return new Promise((resolve, reject) => {
       this.email = email;
       const u = this._user();
+      if (!u) return reject(new Error("Backend not configured yet — run deploy.ps1 first, then sign in."));
       const d = new AmazonCognitoIdentity.AuthenticationDetails({ Username: email, Password: password });
       u.authenticateUser(d, { onSuccess: () => resolve(), onFailure: (e) => reject(e) });
     });
@@ -218,7 +221,7 @@ function requesterCard(r) {
     <div class="card-top">
       <span class="bt-chip">${esc(r.blood_type)}</span>
       <span class="badge ${badgeCls}">${esc(badgeLabel)}</span>
-      <span class="badge ${r.status === "open" ? "sent" : "expired"}">${esc(r.units)} unit(s)</span>
+      <span class="badge ${badgeCls}">${esc(r.units)} unit(s)</span>
     </div>
     <h3>${esc(r.hospital || r.city + " · " + r.blood_type)}</h3>
     <div class="meta">${esc(r.city)} · by ${esc(r.requester_name)} · ends ${esc((r.expires_at || "").replace("T", " "))}</div>
@@ -539,8 +542,8 @@ function renderGapMatrix(s) {
     return `
     <div class="gap-row" style="animation-delay:${(i * 0.03).toFixed(2)}s">
       <span class="gap-type">${bt}</span>
-      <div><div class="gap-bar"><div class="fill don" style="width:${d ? Math.max(3, (d / donMax) * 100) : 0}%"></div></div><div class="gap-label">${d} donor${d === 1 ? "" : "s"}</div></div>
-      <div><div class="gap-bar"><div class="fill need" style="width:${n ? Math.max(3, (n / needMax) * 100) : 0}%"></div></div><div class="gap-label">${n} open need${n === 1 ? "" : "s"}</div></div>
+      <div><div class="gap-bar" role="img" aria-label="${d} donors registered for blood type ${bt}"><div class="fill don" title="${d} donor${d === 1 ? "" : "s"} (${bt})" style="width:${d ? Math.max(3, (d / donMax) * 100) : 0}%"></div></div><div class="gap-label">${d} donor${d === 1 ? "" : "s"}</div></div>
+      <div><div class="gap-bar" role="img" aria-label="${n} open needs for blood type ${bt}"><div class="fill need" title="${n} open need${n === 1 ? "" : "s"} (${bt})" style="width:${n ? Math.max(3, (n / needMax) * 100) : 0}%"></div></div><div class="gap-label">${n} open need${n === 1 ? "" : "s"}</div></div>
       <span class="gap-state ${st.cls}">${st.label}</span>
     </div>`;
   }).join("");
@@ -750,6 +753,8 @@ ACTIONS.createRequest = async (form) => {
     const r = await api("/requests", { method: "POST", body: JSON.stringify(body) });
     toast(`Posted! ${r.matches} matching donor(s) alerted (${r.sms_alerted} reached by SMS).`);
     form.reset();
+    busy(btn, false);
+    loadMyRequests();
     loadRequests("open");
   } catch (e) {
     busy(btn, false);

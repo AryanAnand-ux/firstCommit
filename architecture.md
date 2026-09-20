@@ -50,7 +50,7 @@ flowchart LR
    - Writes up to 20 `rakta_matches` rows (status=`sent`)
    - Publishes SMS to each matched donor + confirmation SMS to requester (SNS)
 2. Donor sees the alert **in-app (My Alerts)** or via SMS → `POST /matches/{id}/respond` (confirm/decline)
-   - `confirm` → SMS to requester with donor name + phone
+   - `confirm` → SMS to requester with donor name + phone, and `confirmed_count += 1` on the request (`declined_count += 1` on decline; both idempotent — re-responding never double-counts, and confirming a non-open request is rejected)
 3. Requester `PATCH /requests/{id}` → `fulfill` (or `cancel`)
    - Cancellation notifies donors; fulfill marks done
 4. **Expiry sweep** (EventBridge, every 6h) → `expireStale`
@@ -76,9 +76,12 @@ GSI: `DonorMatchIndex` — **PK `blood_type`, SK `city#+donor_id`** (enables the
 ### `rakta_requests`
 | Key | Attrs |
 |---|---|
-| `request_id` HASH | requester_id, requester_name, requester_phone, blood_type, city, hospital, note, units, urgency, status, created_at, expires_at, **ttl** |
+| `request_id` HASH | requester_id, requester_name, requester_phone, blood_type, city, hospital, note, units, urgency, status, confirmed_count, declined_count, created_at, expires_at, **ttl** |
 
 GSI: `StatusIndex` — PK `status`, SK `expires_at` (enables the expiry sweep)
+GSI: `RequesterIndex` — PK `requester_id`, SK `created_at` (powers `GET /requests/mine` + the duplicate-open-request guard)
+
+`GET /requests` returns newest-first and exposes the counts; `GET /stats` adds `donors_ready` (available + donation-eligible donors).
 
 ### `rakta_matches`
 | Key | Attrs |

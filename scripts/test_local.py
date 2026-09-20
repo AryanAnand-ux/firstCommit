@@ -81,6 +81,29 @@ class FakeTable:
         self.store[Item[self.key]] = Item
         return {}
 
+    def update_item(self, Key, UpdateExpression="", ExpressionAttributeNames=None, ExpressionAttributeValues=None):
+        """Minimal SET/ADD support matching the expressions our Lambdas use."""
+        names = ExpressionAttributeNames or {}
+        vals = ExpressionAttributeValues or {}
+        item = self.store.get(Key[self.key])
+        if item is None:
+            item = dict(Key)
+            self.store[Key[self.key]] = item
+        set_part, _, add_part = UpdateExpression.partition("ADD")
+        if set_part.strip().upper().startswith("SET"):
+            for assign in set_part[3:].split(","):
+                attr, _, val = assign.partition("=")
+                attr = names.get(attr.strip(), attr.strip())
+                item[attr] = vals.get(val.strip())
+        if add_part.strip():
+            attr, _, val = add_part.strip().partition(" ")
+            attr = names.get(attr.strip(), attr.strip())
+            item[attr] = (item.get(attr) or 0) + vals.get(val.strip(), 0)
+        return {}
+
+    def scan(self, **kw):
+        return {"Items": list(self.store.values())[: kw.get("Limit", 100)]}
+
     def query(self, **kw):
         items = list(self.store.values())
         vals = kw.get("ExpressionAttributeValues", {})
@@ -96,6 +119,10 @@ class FakeTable:
             return {"Items": out[: kw.get("Limit", 100)]}
         if idx == "RequestIndex":
             return {"Items": [i for i in items if i.get("request_id") == vals.get(":r")]}
+        if idx == "DonorIndex":
+            out = [i for i in items if i.get("donor_id") == vals.get(":d")]
+            out.sort(key=lambda i: i.get("created_at", ""), reverse=not kw.get("ScanIndexForward", True))
+            return {"Items": out[: kw.get("Limit", 100)]}
         return {"Items": []}
 
 
@@ -208,6 +235,120 @@ item2["confirmed_count"] = 3
 item2["declined_count"] = 1
 eq("public preserves confirmed_count", dom.public_request(item2)["confirmed_count"], 3)
 eq("public preserves declined_count", dom.public_request(item2)["declined_count"], 1)
+
+print("respond_match counts")
+import importlib.util as _ilu  # noqa: E402
+import json as _json  # noqa: E402
+
+
+def load_lambda(name, rel):
+    path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", *rel)
+    spec = _ilu.spec_from_file_location(name, path)
+    mod = _ilu.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+rm = load_lambda("respond_match_app", ("src", "respond_match", "app.py"))
+ur = load_lambda("update_request_app", ("src", "update_request", "app.py"))
+st = load_lambda("stats_app", ("src", "stats", "app.py"))
+
+
+def authed(body, sub="u1", path_id=None):
+    return {
+        "pathParameters": {"id": path_id} if path_id else {},
+        "body": _json.dumps(body),
+        "requestContext": {"authorizer": {"claims": {"sub": sub, "email": "a@b.c"}}},
+    }
+
+
+def seed_match(env, match_id="m1", donor="d1", req="r1", status="sent", req_status="open"):
+    env.table("MATCHES_TABLE").store[match_id] = {
+        "match_id": match_id, "donor_id": donor, "donor_name": "D", "donor_phone": "+919800000000",
+        "request_id": req, "request_blood_type": "O+", "request_city": "pune",
+        "requester_name": "R", "requester_phone": "+919876543210",
+        "status": status, "created_at": "2026-09-20T00:00:00Z",
+    }
+    env.table("REQUESTS_TABLE").store[req] = {
+        "request_id": req, "status": req_status, "confirmed_count": 0, "declined_count": 0,
+    }
+    rm.db = env
+    rm.notify = env
+    return env
+
+
+env = seed_match(new_env())
+resp = rm.lambda_handler(authed({"action": "confirm"}, sub="d1", path_id="m1"), None)
+eq("confirm ok", resp["statusCode"], 200)
+eq("match confirmed", env.table("MATCHES_TABLE").store["m1"]["status"], "confirmed")
+eq("request confirmed_count 1", env.table("REQUESTS_TABLE").store["r1"]["confirmed_count"], 1)
+eq("requester notified on confirm", env.requester_msgs, ["+919876543210"])
+
+resp = rm.lambda_handler(authed({"action": "confirm"}, sub="d1", path_id="m1"), None)
+eq("re-confirm idempotent", resp["statusCode"], 200)
+eq("no double count", env.table("REQUESTS_TABLE").store["r1"]["confirmed_count"], 1)
+
+env = seed_match(new_env())
+resp = rm.lambda_handler(authed({"action": "decline"}, sub="d1", path_id="m1"), None)
+eq("decline ok", resp["statusCode"], 200)
+eq("match declined", env.table("MATCHES_TABLE").store["m1"]["status"], "declined")
+eq("request declined_count 1", env.table("REQUESTS_TABLE").store["r1"]["declined_count"], 1)
+eq("no requester sms on decline", env.requester_msgs, [])
+
+env = seed_match(new_env(), req_status="fulfilled")
+resp = rm.lambda_handler(authed({"action": "confirm"}, sub="d1", path_id="m1"), None)
+eq("confirm on fulfilled blocked", resp["statusCode"], 409)
+eq("no count on blocked confirm", env.table("REQUESTS_TABLE").store["r1"]["confirmed_count"], 0)
+
+env = seed_match(new_env())
+resp = rm.lambda_handler(authed({"action": "confirm"}, sub="other", path_id="m1"), None)
+eq("wrong donor forbidden", resp["statusCode"], 403)
+
+print("update_request lifecycle")
+env = new_env()
+env.table("REQUESTS_TABLE").store["r1"] = {
+    "request_id": "r1", "requester_id": "u1", "blood_type": "O+", "city": "pune",
+    "requester_name": "R", "requester_phone": "+919876543210",
+    "status": "open", "confirmed_count": 1, "declined_count": 0,
+}
+env.table("MATCHES_TABLE").store["m1"] = {
+    "match_id": "m1", "donor_id": "d1", "donor_phone": "+919800000001", "request_id": "r1", "status": "sent",
+}
+env.table("MATCHES_TABLE").store["m2"] = {
+    "match_id": "m2", "donor_id": "d2", "donor_phone": "+919800000002", "request_id": "r1", "status": "confirmed",
+}
+ur.db = env
+ur.notify = env
+resp = ur.lambda_handler(authed({"action": "fulfill"}, path_id="r1"), None)
+eq("fulfill ok", resp["statusCode"], 200)
+fbody = _json.loads(resp["body"])
+eq("fulfill status", fbody["status"], "fulfilled")
+eq("fulfill counts passthrough", (fbody["confirmed_count"], fbody["declined_count"]), (1, 0))
+eq("sent match closed on fulfill", env.table("MATCHES_TABLE").store["m1"]["status"], "cancelled")
+eq("confirmed match kept on fulfill", env.table("MATCHES_TABLE").store["m2"]["status"], "confirmed")
+eq("fulfill donor sms sent", env.sms_msgs, ["+919800000001"])
+eq("fulfill donor app alert", env.donor_msgs, ["d2"])
+
+resp = ur.lambda_handler(authed({"action": "cancel"}, path_id="r1"), None)
+eq("double fulfill blocked", resp["statusCode"], 409)
+
+resp = ur.lambda_handler(authed({"action": "cancel"}, sub="intruder", path_id="r1"), None)
+eq("non-owner forbidden", resp["statusCode"], 403)
+
+print("stats donors_ready")
+env = new_env()
+env.table("DONORS_TABLE").store["d1"] = {"donor_id": "d1", "blood_type": "O+", "available": True, "last_donation": ""}
+env.table("DONORS_TABLE").store["d2"] = {"donor_id": "d2", "blood_type": "A+", "available": True, "last_donation": "2026-09-01T00:00:00Z"}
+env.table("DONORS_TABLE").store["d3"] = {"donor_id": "d3", "blood_type": "O+", "available": False, "last_donation": ""}
+env.table("REQUESTS_TABLE").store["r1"] = {"request_id": "r1", "status": "open", "blood_type": "O+", "city": "pune"}
+st.db = env
+resp = st.lambda_handler({}, None)
+eq("stats ok", resp["statusCode"], 200)
+sbody = _json.loads(resp["body"])
+eq("stats donors_total", sbody["donors_total"], 3)
+eq("stats donors_ready", sbody["donors_ready"], 1)
+eq("stats open count", sbody["requests"]["open"], 1)
+eq("stats ready by blood", sbody["donors_by_blood_type"], {"O+": 2, "A+": 1})
 
 print()
 print()

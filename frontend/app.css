@@ -403,6 +403,8 @@ a { color: var(--oxblood-2); }
 .badge.urgent { background: var(--rose); color: var(--oxblood); }
 .badge.planned { background: var(--amber-soft); color: var(--amber); }
 .badge.sent { background: var(--rose); color: var(--crimson); }
+.badge.confirmed { background: var(--leaf-soft); color: var(--leaf); }
+.badge.declined { background: #efe7ee; color: var(--ink-2); }
 .badge.fulfilled { background: var(--leaf-soft); color: var(--leaf); }
 .badge.cancelled, .badge.expired { background: #efe7ee; color: var(--ink-3); }
 

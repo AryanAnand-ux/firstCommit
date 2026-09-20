@@ -115,7 +115,15 @@ python scripts/test_local.py
 - **Backend**: `create_request` initializes `confirmed_count: 0` / `declined_count: 0`. `respond_match` increments the appropriate counter via DynamoDB `ADD` (idempotent). `list_requests` sorts by `created_at` desc and exports counts. `stats` adds `donors_ready` (available + eligible donors). `assistant` tool responses include counts.
 - **Bug fixed**: `public_request()` always returned `0` for counts instead of the actual value — the ternary had no else branch for the real item value. Fixed in both `domain.py` and `list_requests/app.py`.
 - **Frontend**: `requesterCard` and `myRequestCard` show confirmed/declined counts. `loadStats` uses `donors_ready` directly. Added `role="status"` + `aria-live="polite"` to count elements and `aria-busy` toggle on the stats row. Added `fadeIn` animation to `.confirmed-line`. Added "(live)" label to live stat.
-- **Tests**: 6 new tests for count initialization and `public_request` preservation. All 55+ tests pass.
+- **Tests**: 6 new tests for count initialization and `public_request` preservation. All 53 tests pass.
+
+### Loop 10 — Full rethink pass (pre-submission hardening)
+- **Critical template fix**: `RequesterIndex` (PK `requester_id`, SK `created_at`) used `created_at` as a GSI key without declaring it in `AttributeDefinitions` — DynamoDB rejects table creation in that state. Added the missing `created_at: S` definition. Verified all other GSI keys are declared.
+- **Backend**: `list_requests` follow-up pagination now passes `Limit=100` (was unbounded per page). `update_request` fulfill/cancel response includes `confirmed_count`/`declined_count`. Seed script writes counts (open → 0/0, fulfilled history → 1/0) so demo data matches the UI.
+- **Frontend bugs**: `createRequest` success path left the submit button stuck on its spinner — now re-enabled, and "My requests" refreshes immediately so the new request appears without navigating. `requesterCard` units badge reused the computed `badgeCls` (was hardcoded `sent`/`expired`). Added missing `.badge.confirmed` (leaf) / `.badge.declined` (muted) styles used by My Alerts. `signUp`/`signIn`/`confirm` now reject with a friendly "run deploy.ps1 first" message when the pool is unconfigured instead of a raw TypeError.
+- **Frontend polish**: gap-matrix bars carry `title` tooltips + `role="img"`/`aria-label` with exact counts.
+- **Tests**: `FakeTable` gained `update_item` (SET/ADD), `scan`, and `DonorIndex` support. New suites: `respond_match` counts (confirm/decline/idempotency/blocked/wrong-donor), `update_request` lifecycle (fulfill closes sent, keeps confirmed, notifies, 409/403), `stats` `donors_ready`. **All 80 checks pass.**
+- **Docs**: `design.md` tokens/components rewritten to the real Loop-7 system (oxblood/Fraunces/Manrope, gap matrix, confirmed line, full badge set). `architecture.md` data model + lifecycle updated (counts, `RequesterIndex`, `donors_ready`, newest-first). `prd.md` scope + `README.md` test count (33 → 80) synced.
 
 ## Links
 

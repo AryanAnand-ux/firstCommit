@@ -38,7 +38,15 @@ def lambda_handler(event, context):
     item["status"] = new_status
 
     notified = _notify_matches(item, action)
-    return ok({"request_id": request_id, "status": new_status, "donors_notified": notified})
+    return ok(
+        {
+            "request_id": request_id,
+            "status": new_status,
+            "donors_notified": notified,
+            "confirmed_count": item.get("confirmed_count", 0),
+            "declined_count": item.get("declined_count", 0),
+        }
+    )
 
 
 def _notify_matches(item, action):

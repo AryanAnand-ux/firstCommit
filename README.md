@@ -83,7 +83,7 @@ src/
   assistant/            # Bedrock Nova agent (tool use: create/list/my requests)
   expire_stale/         # EventBridge sweeper (cascades to pending matches)
 frontend/               # vanilla JS SPA (no build step)
-scripts/                # seed (+ history), smoke test, local logic tests (33 checks)
+scripts/                # seed (+ history), smoke test, local logic tests (80 checks)
 ```
 
 Plus: `prd.md`, `architecture.md`, `design.md`, `rules.md`, `task.md`, `memory.md`.

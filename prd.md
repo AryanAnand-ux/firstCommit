@@ -39,6 +39,7 @@ An **AI assistant** (Amazon Bedrock · Nova) answers eligibility questions in si
 - [x] Auto-matching: same blood type + city + eligible + available (cap 20)
 - [x] Alerts: SMS to donors (SNS) + in-app "My Alerts"
 - [x] Donor confirm/decline flow; requester notified on confirm
+- [x] Live confirmed/declined donor counts on every request; "donors ready" stat (available + eligible)
 - [x] Lifecycle: fulfill / cancel / expire with automatic TTL cleanup
 - [x] Public stats dashboard (live counts, by type/city)
 - [x] AI assistant: eligibility Q&A + can create a request via tool call

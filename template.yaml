@@ -188,6 +188,8 @@ Resources:
           AttributeType: S
         - AttributeName: requester_id
           AttributeType: S
+        - AttributeName: created_at
+          AttributeType: S
       KeySchema:
         - AttributeName: request_id
           KeyType: HASH

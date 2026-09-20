@@ -49,6 +49,7 @@ def _query_status(status):
             ExpressionAttributeValues={":st": status},
             ScanIndexForward=False,
             ExclusiveStartKey=last,
+            Limit=100,
         )
         items.extend(resp.get("Items", []))
         last = resp.get("LastEvaluatedKey")

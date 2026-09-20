@@ -9,47 +9,49 @@
 ```css
 :root {
   /* Palette */
-  --blood:      #b0162f;   /* primary / actions */
-  --blood-dark: #8c1024;   /* hover / pressed */
-  --maroon:     #5c0a16;   /* deep accents, footer */
-  --cream:      #fdf6f2;   /* app background */
-  --paper:      #ffffff;   /* cards */
-  --ink:        #241316;   /* text */
-  --muted:      #7a6a6e;   /* secondary text */
-  --done:       #1d7a46;   /* fulfilled / confirm */
-  --warn:       #c77700;   /* pending / info */
-  --line:       #ecdcd7;   /* hairline borders */
+  --oxblood:    #7c1226;   /* primary / actions */
+  --oxblood-2:  #a51e34;   /* hover / accents */
+  --crimson:    #d63a3a;   /* urgent / live dot */
+  --rose:       #fbe9e6;   /* soft alert bg */
+  --paper:      #f7f1ea;   /* app background */
+  --paper-2:    #fdfaf6;   /* cards */
+  --ink:        #2a151c;   /* text */
+  --ink-2:      #6b5660;   /* secondary text */
+  --ink-3:      #a18e96;   /* muted text */
+  --leaf:       #1f7a4d;   /* fulfilled / confirm */
+  --amber:      #a8690f;   /* planned / pending */
+  --line:       #e9ddd2;   /* hairline borders */
 
   /* Shape */
-  --radius: 14px;
-  --radius-sm: 10px;
+  --radius: 18px;
+  --radius-sm: 12px;
 
   /* Type */
-  --font: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+  --font-disp: "Fraunces", Georgia, serif;   /* headlines, numbers, chips */
+  --font-ui: "Manrope", system-ui, sans-serif; /* body, labels, buttons */
 }
 ```
 
 ## 3. Typography
 
-- System font stack (fast, no webfont cost, crisp on every device).
-- Headlines: 700/800 weight, tight tracking (−0.01em).
-- Labels/uppercase eyebrows (`RAKTA`, `LIVE`, blood-type chips) in 11–12px, letter-spaced 0.08em.
-- Numbers/stat live tiles: 28px, tabular figures.
+- Fraunces (display serif) for headlines, stat numbers, blood-type chips and counts; Manrope for everything else.
+- Headlines: 600 weight, tight tracking (−0.02em), italic accent in `--oxblood`.
+- Labels/uppercase eyebrows (`LIVE`, section eyebrows) in 11–12px, letter-spaced 0.05–0.14em.
+- Numbers/stat tiles: 34px Fraunces, tabular figures; animated count-up on load.
 
 ## 4. Components
 
 | Component | Spec |
 |---|---|
-| Top bar | Cream bg, logo chip (blood drop + "RaktaSetu"), nav links, "Sign in" pill button |
-| Blood-type chip | Rounded square, white text on `--blood`, e.g. `O−` |
-| Request card | White card, `--radius`, 1px `--line` border; left border accent = urgency (urgent → `--blood` 3px; planned → `--warn`) |
-| Urgency badge | Pill: URGENT (`--blood`), PLANNED (`--warn`), FULFILLED (`--done`), EXPIRED (muted) |
-| CTA | `--blood` fill, white text, `--radius-sm`, 44px touch height |
-| Primary button | Full-width on mobile, `-2px` on hover, subtle shadow on active |
-| Form | Stacked labels, 46px inputs, `--line` border, focus ring `--blood` 2px |
-| Stat tile | Cream `--paper` card, big number, eyebrow label, live dot |
-| Chat (assistant) | Requester bubbles `--blood`/white; assistant bubbles `--paper`/`--ink`; typing indicator dots |
-| Toast | Bottom-center pill, `--ink` 92%, white text, 3s auto-dismiss |
+| Top bar | Warm paper bg w/ blur, drop logo + "RaktaSetu · the blood bridge", pill nav (scrollable on mobile), user chip + auth pill |
+| Blood-type chip | Fraunces 700, `--oxblood` on `--rose`, e.g. `O+` |
+| Request card | Paper card, `--radius`, 1px `--line` border; left border accent = urgency (urgent → `--crimson` 4px; planned → `--amber`) |
+| Urgency badge | Pill + dot: URGENT (`--oxblood`), PLANNED (`--amber`), SENT (`--crimson`), FULFILLED/CONFIRMED (`--leaf`), CANCELLED/EXPIRED/DECLINED (muted) |
+| Confirmed line | `--leaf` meta line under the card title: "**N** donors confirmed · M declined" |
+| Stat tile | Paper card, 3px `--oxblood` top border, big Fraunces number, eyebrow label, live dot |
+| Gap matrix | 8 blood-group rows: donor bar (`--oxblood` gradient) vs open-need bar, raw counts, status pill (`Covered` / `Needs donors` / `Donors ready`) |
+| Chat (assistant) | Requester bubbles `--oxblood` gradient/white; assistant bubbles white/`--ink`; typing indicator dots |
+| Toast | Bottom-center pill, `--ink`, white text, 3.4s auto-dismiss |
 
 ## 5. Layout
 
