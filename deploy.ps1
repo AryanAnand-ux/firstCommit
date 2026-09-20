@@ -9,27 +9,47 @@ Set-Location $root
 
 function Fail([string]$msg) { Write-Host "[!] $msg" -ForegroundColor Red; exit 1 }
 function Step([string]$msg) { Write-Host "`n==> $msg" -ForegroundColor Cyan }
+function Invoke-NativeCapture([scriptblock]$Command) {
+  $prev = $ErrorActionPreference
+  $ErrorActionPreference = "Continue"
+  try {
+    $output = & $Command 2>&1
+    $code = $LASTEXITCODE
+  } finally {
+    $ErrorActionPreference = $prev
+  }
+
+  [pscustomobject]@{
+    ExitCode = $code
+    Output = (@($output) | ForEach-Object { $_.ToString() }) -join "`n"
+  }
+}
+function Invoke-NativeStream([scriptblock]$Command, [string]$FailureMessage) {
+  $result = Invoke-NativeCapture $Command
+  if ($result.Output) { $result.Output | Out-Host }
+  if ($result.ExitCode -ne 0) { Fail $FailureMessage }
+}
 
 if (-not (Get-Command aws -ErrorAction SilentlyContinue)) { Fail "AWS CLI not found. Install with: winget install Amazon.AWSCLI" }
 if (-not (Get-Command sam -ErrorAction SilentlyContinue)) { Fail "SAM CLI not found. Install with: winget install aws-sam-cli" }
 
 Step "Checking AWS identity..."
-$ident = aws sts get-caller-identity --region $Region 2>&1
-if ($LASTEXITCODE -ne 0) { Fail "Not authenticated. Run 'aws configure' first.`n$ident" }
+$ident = Invoke-NativeCapture { aws sts get-caller-identity --region $Region }
+if ($ident.ExitCode -ne 0) { Fail "Not authenticated. Run 'aws configure' first.`n$($ident.Output)" }
 
 if (-not $FrontendOnly) {
   Step "Building SAM app..."
-  sam build 2>&1 | Out-Host
-  if ($LASTEXITCODE -ne 0) { Fail "sam build failed" }
+  Invoke-NativeStream { sam build } "sam build failed"
 
   Step "Deploying stack '$StackName' in $Region (free-tier serverless)..."
-  sam deploy --stack-name $StackName --resolve-s3 --region $Region --capabilities CAPABILITY_IAM --no-confirm-changeset 2>&1 | Out-Host
-  if ($LASTEXITCODE -ne 0) { Fail "sam deploy failed - see message above" }
+  Invoke-NativeStream { sam deploy --stack-name $StackName --resolve-s3 --region $Region --capabilities CAPABILITY_IAM --no-confirm-changeset } "sam deploy failed - see message above"
 }
 
 Step "Reading stack outputs..."
-$out = aws cloudformation describe-stacks --stack-name $StackName --region $Region --query "Stacks[0].Outputs" --output json 2>&1 | ConvertFrom-Json
-if ($LASTEXITCODE -ne 0 -or -not $out) { Fail "Could not read stack outputs. Did the deploy complete?" }
+$stackOutputs = Invoke-NativeCapture { aws cloudformation describe-stacks --stack-name $StackName --region $Region --query "Stacks[0].Outputs" --output json }
+if ($stackOutputs.ExitCode -ne 0) { Fail "Could not read stack outputs. Did the deploy complete?`n$($stackOutputs.Output)" }
+$out = $stackOutputs.Output | ConvertFrom-Json
+if (-not $out) { Fail "Could not read stack outputs. Did the deploy complete?" }
 $map = @{}
 foreach ($o in $out) { $map[$o.OutputKey] = $o.OutputValue }
 
@@ -42,14 +62,13 @@ $tpl = $tpl.Replace("{{REGION}}", $Region)
 Set-Content -Path "$root\frontend\config.js" -Value $tpl -Encoding UTF8
 
 Step "Uploading frontend to S3 (bucket: $($map['FrontendBucket']))..."
-aws s3 sync "$root\frontend" "s3://$($map['FrontendBucket'])" --exclude "config.template.js" --region $Region 2>&1 | Out-Host
-if ($LASTEXITCODE -ne 0) { Fail "s3 sync failed" }
+Invoke-NativeStream { aws s3 sync "$root\frontend" "s3://$($map['FrontendBucket'])" --exclude "config.template.js" --region $Region } "s3 sync failed"
 
 Step "Invalidating CloudFront cache so new frontend goes live immediately..."
 $cfId = $map["CloudFrontDistributionId"]
 if ($cfId) {
-  aws cloudfront create-invalidation --distribution-id $cfId --paths "/*" --region $Region 2>&1 | Out-Null
-  if ($LASTEXITCODE -ne 0) { Write-Host "  [warn] invalidation failed - re-run manually if the page looks stale." -ForegroundColor Yellow }
+  $invalidation = Invoke-NativeCapture { aws cloudfront create-invalidation --distribution-id $cfId --paths "/*" --region $Region }
+  if ($invalidation.ExitCode -ne 0) { Write-Host "  [warn] invalidation failed - re-run manually if the page looks stale." -ForegroundColor Yellow }
 } else {
   Write-Host "  [warn] CloudFrontDistributionId not found - skipping invalidation." -ForegroundColor Yellow
 }
