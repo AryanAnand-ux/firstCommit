@@ -1,0 +1,22 @@
+.aws-sam/
+.sam/
+build/
+node_modules/
+
+# generated at deploy time
+frontend/config.js
+
+# python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# ide / os
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+
+# local state
+*.log

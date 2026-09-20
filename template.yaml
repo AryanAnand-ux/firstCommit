@@ -1,0 +1,461 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: >
+  RaktaSetu - AI-powered emergency blood & platelet donor network.
+  Bharat Builds Tour "First Commit" hackathon - Ship It track.
+
+Globals:
+  Function:
+    Runtime: python3.12
+    Timeout: 30
+    MemorySize: 256
+    Layers:
+      - !Ref SharedLayer
+    Environment:
+      Variables:
+        USERS_TABLE: !Ref UsersTable
+        DONORS_TABLE: !Ref DonorsTable
+        REQUESTS_TABLE: !Ref RequestsTable
+        MATCHES_TABLE: !Ref MatchesTable
+        SMS_SENDER_ID: RAKTA
+        REGION: !Ref AWS::Region
+    Policies:
+      - DynamoDBCrudPolicy:
+          TableName: !Ref UsersTable
+      - DynamoDBCrudPolicy:
+          TableName: !Ref DonorsTable
+      - DynamoDBCrudPolicy:
+          TableName: !Ref RequestsTable
+      - DynamoDBCrudPolicy:
+          TableName: !Ref MatchesTable
+      - Statement:
+          - Effect: Allow
+            Action:
+              - sns:Publish
+            Resource: '*'
+      - Statement:
+          - Effect: Allow
+            Action:
+              - bedrock:InvokeModel
+            Resource: '*'
+      - Statement:
+          - Effect: Allow
+            Action:
+              - logs:CreateLogStream
+              - logs:PutLogEvents
+            Resource: !Sub arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/*:*
+
+Parameters:
+  AssistantModelId:
+    Type: String
+    Description: Amazon Bedrock model id used by the assistant (Converse API).
+    Default: amazon.nova-lite-v1:0
+
+Resources:
+  # ------------------------------------------------------------------
+  # Shared Python layer (pure stdlib + boto3 - no pip install needed)
+  # ------------------------------------------------------------------
+  SharedLayer:
+    Type: AWS::Serverless::LayerVersion
+    Properties:
+      LayerName: rakta-shared
+      Description: Shared helpers (DDB access, SNS SMS, validation, API responses)
+      ContentUri: src/layer
+      CompatibleRuntimes:
+        - python3.12
+
+  # ------------------------------------------------------------------
+  # Auth - Amazon Cognito
+  # ------------------------------------------------------------------
+  UserPool:
+    Type: AWS::Cognito::UserPool
+    Properties:
+      UserPoolName: rakta-users
+      AutoVerifiedAttributes:
+        - email
+      UsernameAttributes:
+        - email
+      MfaConfiguration: OFF
+      PreventUserExistenceErrors: ENABLED
+      Schema:
+        - Name: isDonor
+          AttributeDataType: String
+          Mutable: true
+      Policies:
+        PasswordPolicy:
+          MinimumLength: 8
+          RequireLowercase: true
+          RequireUppercase: true
+          RequireNumbers: true
+          RequireSymbols: false
+          TemporaryPasswordValidityDays: 7
+
+  UserPoolClient:
+    Type: AWS::Cognito::UserPoolClient
+    Properties:
+      UserPoolId: !Ref UserPool
+      GenerateSecret: false
+      SupportedIdentityProviders:
+        - COGNITO
+      ExplicitAuthFlows:
+        - ALLOW_USER_SRP_AUTH
+        - ALLOW_USER_PASSWORD_AUTH
+        - ALLOW_REFRESH_TOKEN_AUTH
+
+  # ------------------------------------------------------------------
+  # Data - Amazon DynamoDB
+  # ------------------------------------------------------------------
+  UsersTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: rakta_users
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: user_id
+          AttributeType: S
+        - AttributeName: email
+          AttributeType: S
+        - AttributeName: phone
+          AttributeType: S
+      KeySchema:
+        - AttributeName: user_id
+          KeyType: HASH
+      GlobalSecondaryIndexes:
+        - IndexName: EmailIndex
+          KeySchema:
+            - AttributeName: email
+              KeyType: HASH
+          Projection:
+            ProjectionType: ALL
+        - IndexName: PhoneIndex
+          KeySchema:
+            - AttributeName: phone
+              KeyType: HASH
+          Projection:
+            ProjectionType: ALL
+
+  DonorsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: rakta_donors
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: donor_id
+          AttributeType: S
+        - AttributeName: blood_type
+          AttributeType: S
+        - AttributeName: match_key
+          AttributeType: S
+      KeySchema:
+        - AttributeName: donor_id
+          KeyType: HASH
+      GlobalSecondaryIndexes:
+        - IndexName: DonorMatchIndex
+          KeySchema:
+            - AttributeName: blood_type
+              KeyType: HASH
+            - AttributeName: match_key
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+
+  RequestsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: rakta_requests
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: request_id
+          AttributeType: S
+        - AttributeName: status
+          AttributeType: S
+        - AttributeName: expires_at
+          AttributeType: S
+      KeySchema:
+        - AttributeName: request_id
+          KeyType: HASH
+      GlobalSecondaryIndexes:
+        - IndexName: StatusIndex
+          KeySchema:
+            - AttributeName: status
+              KeyType: HASH
+            - AttributeName: expires_at
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+      TimeToLiveSpecification:
+        AttributeName: ttl
+        Enabled: true
+
+  MatchesTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: rakta_matches
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: match_id
+          AttributeType: S
+        - AttributeName: donor_id
+          AttributeType: S
+        - AttributeName: created_at
+          AttributeType: S
+        - AttributeName: request_id
+          AttributeType: S
+      KeySchema:
+        - AttributeName: match_id
+          KeyType: HASH
+      GlobalSecondaryIndexes:
+        - IndexName: DonorIndex
+          KeySchema:
+            - AttributeName: donor_id
+              KeyType: HASH
+            - AttributeName: created_at
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+        - IndexName: RequestIndex
+          KeySchema:
+            - AttributeName: request_id
+              KeyType: HASH
+          Projection:
+            ProjectionType: ALL
+
+  # ------------------------------------------------------------------
+  # API - Amazon API Gateway
+  # ------------------------------------------------------------------
+  RaktaApi:
+    Type: AWS::Serverless::Api
+    Properties:
+      Name: raktasetu-api
+      StageName: prod
+      Auth:
+        DefaultAuthorizer: RaktaCognitoAuthorizer
+        Authorizers:
+          RaktaCognitoAuthorizer:
+            UserPoolArn: !GetAtt UserPool.Arn
+        AddDefaultAuthorizerToCorsPreflight: false
+      Cors:
+        AllowMethods: "'GET,POST,PUT,PATCH,DELETE,OPTIONS'"
+        AllowHeaders: "'Content-Type,Authorization,X-Amz-Date,X-Api-Key,X-Amz-Security-Token'"
+        AllowOrigin: "'*'"
+        MaxAge: "'600'"
+
+  # ------------------------------------------------------------------
+  # Functions
+  # ------------------------------------------------------------------
+  CreateRequestFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: src/create_request
+      Handler: app.lambda_handler
+      Events:
+        CreateRequest:
+          Type: Api
+          Properties:
+            RestApiId: !Ref RaktaApi
+            Path: /requests
+            Method: post
+
+  ListRequestsFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: src/list_requests
+      Handler: app.lambda_handler
+      Events:
+        ListRequests:
+          Type: Api
+          Properties:
+            RestApiId: !Ref RaktaApi
+            Path: /requests
+            Method: get
+
+  UpdateRequestFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: src/update_request
+      Handler: app.lambda_handler
+      Events:
+        UpdateRequest:
+          Type: Api
+          Properties:
+            RestApiId: !Ref RaktaApi
+            Path: /requests/{id}
+            Method: patch
+
+  DonorFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: src/donor
+      Handler: app.lambda_handler
+      Events:
+        GetDonor:
+          Type: Api
+          Properties:
+            RestApiId: !Ref RaktaApi
+            Path: /donors/me
+            Method: get
+        PutDonor:
+          Type: Api
+          Properties:
+            RestApiId: !Ref RaktaApi
+            Path: /donors/me
+            Method: put
+
+  MatchesFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: src/matches
+      Handler: app.lambda_handler
+      Events:
+        ListMatches:
+          Type: Api
+          Properties:
+            RestApiId: !Ref RaktaApi
+            Path: /matches/me
+            Method: get
+
+  RespondMatchFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: src/respond_match
+      Handler: app.lambda_handler
+      Events:
+        RespondMatch:
+          Type: Api
+          Properties:
+            RestApiId: !Ref RaktaApi
+            Path: /matches/{id}/respond
+            Method: post
+
+  StatsFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: src/stats
+      Handler: app.lambda_handler
+      Events:
+        GetStats:
+          Type: Api
+          Properties:
+            RestApiId: !Ref RaktaApi
+            Path: /stats
+            Method: get
+            Auth:
+              Authorizer: NONE
+
+  AssistantFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: src/assistant
+      Handler: app.lambda_handler
+      Runtime: python3.12
+      MemorySize: 512
+      Timeout: 90
+      Environment:
+        Variables:
+          USERS_TABLE: !Ref UsersTable
+          DONORS_TABLE: !Ref DonorsTable
+          REQUESTS_TABLE: !Ref RequestsTable
+          MATCHES_TABLE: !Ref MatchesTable
+          SMS_SENDER_ID: RAKTA
+          REGION: !Ref AWS::Region
+          MODEL_ID: !Ref AssistantModelId
+      Events:
+        AskAssistant:
+          Type: Api
+          Properties:
+            RestApiId: !Ref RaktaApi
+            Path: /assistant
+            Method: post
+
+  # ------------------------------------------------------------------
+  # Orchestration - Amazon EventBridge
+  # ------------------------------------------------------------------
+  ExpireStaleFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: src/expire_stale
+      Handler: app.lambda_handler
+      Events:
+        ScheduledExpire:
+          Type: Schedule
+          Properties:
+            Schedule: rate(6 hours)
+            Name: raktasetu-expire-stale
+            Description: Expire stale open requests and notify requesters
+
+  # ------------------------------------------------------------------
+  # Frontend - S3 + CloudFront
+  # ------------------------------------------------------------------
+  FrontendBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub 'raktasetu-frontend-${AWS::AccountId}'
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+
+  FrontendOAC:
+    Type: AWS::CloudFront::OriginAccessControl
+    Properties:
+      OriginAccessControlConfig:
+        Name: raktasetu-oac
+        OriginAccessControlOriginType: s3
+        SigningBehavior: always
+        SigningProtocol: sigv4
+
+  FrontendDistribution:
+    Type: AWS::CloudFront::Distribution
+    Properties:
+      DistributionConfig:
+        Origins:
+          - Id: S3Origin
+            DomainName: !GetAtt FrontendBucket.RegionalDomainName
+            OriginAccessControlId: !Ref FrontendOAC
+        Enabled: true
+        HttpVersion: http2
+        DefaultRootObject: index.html
+        PriceClass: PriceClass_100
+        ViewerCertificate:
+          CloudFrontDefaultCertificate: true
+        DefaultCacheBehavior:
+          TargetOriginId: S3Origin
+          ViewerProtocolPolicy: redirect-to-https
+          Compress: true
+          CachePolicyId: 658327ea-f89d-4fab-a63d-7e88639e58f6
+
+  FrontendBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref FrontendBucket
+      PolicyDocument:
+        Statement:
+          - Effect: Allow
+            Action: s3:GetObject
+            Principal:
+              Service: cloudfront.amazonaws.com
+            Resource: !Sub arn:aws:s3:::${FrontendBucket}/*
+            Condition:
+              StringEquals:
+                AWS:SourceArn: !Sub arn:aws:cloudfront::${AWS::AccountId}:distribution/${FrontendDistribution}
+
+Outputs:
+  ApiEndpoint:
+    Description: API Gateway endpoint (allow few minutes for distribution)
+    Value: !Sub https://${RaktaApi}.execute-api.${AWS::Region}.amazonaws.com/prod
+  FrontendUrl:
+    Description: Live web app URL (submission URL for Ship It track)
+    Value: !Sub https://${FrontendDistribution.DomainName}
+  FrontendBucket:
+    Description: S3 bucket hosting the frontend
+    Value: !Ref FrontendBucket
+  UserPoolId:
+    Description: Cognito user pool id (used by frontend config)
+    Value: !Ref UserPool
+  UserPoolClientId:
+    Description: Cognito user pool client id (used by frontend config)
+    Value: !Ref UserPoolClient
+  CloudFrontDistributionId:
+    Description: CloudFront distribution id (used for cache invalidation)
+    Value: !Ref FrontendDistribution

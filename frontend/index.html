@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="description" content="RaktaSetu — AI-powered emergency blood &amp; platelet donor network for India. Find matching donors in minutes, not hours." />
+  <title>RaktaSetu — Blood donor network</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='9' fill='%23b0162f'/%3E%3Cpath d='M16 8c3 4 6 7 6 12a6 6 0 1 1-12 0c0-5 3-8 6-12Z' fill='%23fff'/%3E%3C/svg%3E" />
+  <link rel="stylesheet" href="app.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="topbar-inner">
+      <a class="brand" href="#/"><span class="brand-drop"></span> RaktaSetu</a>
+      <nav class="nav">
+        <button data-nav="#/">Home</button>
+        <button data-nav="#/requests">Requests</button>
+        <button data-nav="#/donor">Donor</button>
+        <button data-nav="#/alerts">My Alerts</button>
+        <button data-nav="#/assistant">Assistant</button>
+      </nav>
+      <span class="user-chip" id="userChip"></span>
+      <button class="auth-pill" id="authBtn">Sign in</button>
+    </div>
+  </header>
+
+  <main id="app"><div class="empty"><div class="big">⏳</div>Loading…</div></main>
+
+  <footer>
+    <div class="footer-inner">
+      <span>RaktaSetu · Bharat Builds Tour · First Commit 2026</span>
+      <span>Built on AWS · Ship It track</span>
+    </div>
+  </footer>
+
+  <div id="toast" role="status" aria-live="polite"></div>
+
+  <script src="https://cdn.jsdelivr.net/npm/amazon-cognito-identity-js@6.3.13/dist/amazon-cognito-identity-js.min.js"></script>
+  <script src="config.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
