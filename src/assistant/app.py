@@ -191,6 +191,8 @@ def _do_my_requests(user):
             "status": i.get("status"),
             "created_at": i.get("created_at"),
             "expires_at": i.get("expires_at"),
+            "confirmed_count": i.get("confirmed_count", 0),
+            "declined_count": i.get("declined_count", 0),
         }
         for i in items[:20]
     ]
@@ -235,6 +237,8 @@ def _do_list(args):
             "requested_by": i.get("requester_name"),
             "phone": i.get("requester_phone"),
             "expires_at": i.get("expires_at"),
+            "confirmed_count": i.get("confirmed_count", 0),
+            "declined_count": i.get("declined_count", 0),
         }
         for i in items[:25]
     ]

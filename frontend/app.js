@@ -222,6 +222,7 @@ function requesterCard(r) {
     </div>
     <h3>${esc(r.hospital || r.city + " · " + r.blood_type)}</h3>
     <div class="meta">${esc(r.city)} · by ${esc(r.requester_name)} · ends ${esc((r.expires_at || "").replace("T", " "))}</div>
+    ${r.confirmed_count > 0 || r.declined_count > 0 ? `<div class="meta confirmed-line" role="status" aria-live="polite"><b>${esc(r.confirmed_count)}</b> donor${r.confirmed_count === 1 ? "" : "s"} confirmed${r.declined_count > 0 ? ` · ${esc(r.declined_count)} declined` : ""}</div>` : ""}
     ${r.note ? `<p class="muted" style="margin-top:8px">${esc(r.note)}</p>` : ""}
     <div class="row">
       ${telPill(r.requester_phone)}
@@ -493,20 +494,23 @@ function countUp(el, target, dur = 900) {
 async function loadStats() {
   const row = $("#statRow");
   if (!row || !cfg) return;
+  row.setAttribute("aria-busy", "true");
   try {
     const s = await api("/stats");
     const stats = [
-      { v: s.requests.open, lbl: "Open needs", live: true },
-      { v: s.requests.total, lbl: "Total posted" },
-      { v: s.requests.fulfilled, lbl: "Fulfilled" },
-      { v: s.donors_total, lbl: "Donors ready" },
+      { v: s.requests.open, lbl: "Open needs", live: true, role: "status" },
+      { v: s.requests.total, lbl: "Total posted", live: false, role: "status" },
+      { v: s.requests.fulfilled, lbl: "Fulfilled", live: false, role: "status" },
+      { v: s.donors_ready, lbl: "Donors ready", live: false, role: "status" },
     ];
+row.setAttribute("aria-busy", "false");
     row.innerHTML = stats.map((st) =>
-      `<div class="stat"><div class="num" data-count="${esc(st.v)}">0</div><div class="lbl">${st.live ? '<span class="live-dot"></span>' : ""}${esc(st.lbl)}</div></div>`
+      `<div class="stat"><div class="num" data-count="${esc(st.v)}">0</div><div class="lbl">${st.live ? '<span class="live-dot"></span>' : ""}${esc(st.lbl)}${st.live ? ' <span style="font-size:10px;opacity:0.6">(live)</span>' : ""}</div></div>`
     ).join("");
     $$("#statRow .num").forEach((el) => countUp(el, parseInt(el.dataset.count, 10) || 0));
     renderGapMatrix(s);
   } catch (e) {
+    row.setAttribute("aria-busy", "false");
     row.innerHTML = '<div class="empty">Stats unavailable — deploy to see live numbers.</div>';
     const gm = $("#gapMatrix");
     if (gm) gm.innerHTML = dropState("Blood-need matrix unavailable", "It appears once the backend is deployed.");
@@ -610,6 +614,7 @@ function myRequestCard(r) {
       <span class="meta">expires ${esc((r.expires_at || "").replace("T", " "))}</span>
     </div>
     <div class="meta">${esc(r.hospital || r.city)} · ${esc(r.city)} · ${esc(r.units)} unit(s)</div>
+    ${r.confirmed_count > 0 ? `<div class="meta confirmed-line" role="status" aria-live="polite"><b>${esc(r.confirmed_count)}</b> donor${r.confirmed_count === 1 ? "" : "s"} confirmed${r.declined_count > 0 ? ` · ${esc(r.declined_count)} declined` : ""}</div>` : ""}
     ${r.note ? `<p class="muted" style="margin-top:6px">${esc(r.note)}</p>` : ""}
     ${canAct ? `<div class="row"><span class="muted">Donors are being alerted. Keep this live until someone confirms.</span>
       <span style="margin-left:auto;display:flex;gap:8px;flex-wrap:wrap">

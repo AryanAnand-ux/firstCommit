@@ -194,8 +194,22 @@ item, meta = one_request(env)
 eq("recent donor skipped by live cooldown", env.donor_msgs, ["e2"])
 eq("cooldown matched 1", meta["matched"], 1)
 
-print()
+print("confirmed/declined counts")
+env = new_env()
+item, _ = one_request(env)
+eq("create confirmed_count", item["confirmed_count"], 0)
+eq("create declined_count", item["declined_count"], 0)
+eq("public includes confirmed_count", dom.public_request(item)["confirmed_count"], 0)
+eq("public includes declined_count", dom.public_request(item)["declined_count"], 0)
 
+env2 = new_env()
+item2, _ = one_request(env2)
+item2["confirmed_count"] = 3
+item2["declined_count"] = 1
+eq("public preserves confirmed_count", dom.public_request(item2)["confirmed_count"], 3)
+eq("public preserves declined_count", dom.public_request(item2)["declined_count"], 1)
+
+print()
 print()
 if FAIL:
     print(f"{len(FAIL)} FAILED: {FAIL}")

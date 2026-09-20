@@ -71,6 +71,8 @@ def create_request(requester, payload, notify_people=True):
         "units": units,
         "urgency": urgency,
         "status": "open",
+        "confirmed_count": 0,
+        "declined_count": 0,
         "created_at": _iso(now),
         "expires_at": _iso(expires_at),
         "ttl": int(expires_at.timestamp()),
@@ -189,9 +191,9 @@ def public_request(item):
     keys = [
         "request_id", "blood_type", "city", "hospital", "note", "units",
         "urgency", "status", "created_at", "expires_at",
-        "requester_name", "requester_phone",
+        "requester_name", "requester_phone", "confirmed_count", "declined_count",
     ]
-    return {k: item.get(k) for k in keys}
+    return {k: (item.get(k) if item.get(k) is not None else 0) if k in ("confirmed_count", "declined_count") else item.get(k) for k in keys}
 
 
 def _to_int(value, default):

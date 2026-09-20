@@ -111,6 +111,12 @@ python scripts/test_local.py
 - `Auth._pool` construction is now try/catch-guarded so a malformed `POOL_ID` can never crash the SPA (Cognito throws `Invalid UserPoolId format`).
 - Local preview = `scripts/`-independent mock server (temp `dev_server.py`) serving `frontend/` + canned `/stats`; `frontend/config.js` is gitignored so the same file never ships.
 
+### Loop 9 — Confirmed/declined counts + donors_ready stat + accessibility
+- **Backend**: `create_request` initializes `confirmed_count: 0` / `declined_count: 0`. `respond_match` increments the appropriate counter via DynamoDB `ADD` (idempotent). `list_requests` sorts by `created_at` desc and exports counts. `stats` adds `donors_ready` (available + eligible donors). `assistant` tool responses include counts.
+- **Bug fixed**: `public_request()` always returned `0` for counts instead of the actual value — the ternary had no else branch for the real item value. Fixed in both `domain.py` and `list_requests/app.py`.
+- **Frontend**: `requesterCard` and `myRequestCard` show confirmed/declined counts. `loadStats` uses `donors_ready` directly. Added `role="status"` + `aria-live="polite"` to count elements and `aria-busy` toggle on the stats row. Added `fadeIn` animation to `.confirmed-line`. Added "(live)" label to live stat.
+- **Tests**: 6 new tests for count initialization and `public_request` preservation. All 55+ tests pass.
+
 ## Links
 
 - Event: <https://www.wemakedevs.org/aws/first-commit>

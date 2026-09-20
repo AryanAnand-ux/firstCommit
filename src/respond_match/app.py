@@ -24,6 +24,7 @@ def lambda_handler(event, context):
 
     new_status = "confirmed" if action == "confirm" else "declined"
     current = item.get("status")
+    request_table = db.table("REQUESTS_TABLE")
 
     if current in {"confirmed", "declined"}:
         if current == new_status:
@@ -31,7 +32,6 @@ def lambda_handler(event, context):
         return conflict(f"You already responded to this alert as {current}.")
 
     if action == "confirm":
-        request_table = db.table("REQUESTS_TABLE")
         request = request_table.get_item(Key={"request_id": item.get("request_id")}).get("Item")
         if not request or request.get("status") != "open":
             return conflict("This request is no longer active, so your confirmation is closed.")
@@ -43,6 +43,14 @@ def lambda_handler(event, context):
         ExpressionAttributeValues={":s": new_status, ":r": now_iso()},
     )
     item["status"] = new_status
+
+    if item.get("request_id"):
+        request_table.update_item(
+            Key={"request_id": item["request_id"]},
+            UpdateExpression="ADD #c :one",
+            ExpressionAttributeNames={"#c": "confirmed_count" if action == "confirm" else "declined_count"},
+            ExpressionAttributeValues={":one": 1},
+        )
 
     if action == "confirm":
         notify.notify_requester(

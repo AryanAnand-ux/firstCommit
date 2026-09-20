@@ -16,6 +16,7 @@ def lambda_handler(event, context):
         pass
 
     items = _query_status(status)
+    items.sort(key=lambda i: i.get("created_at", ""), reverse=True)
 
     if blood_type:
         items = [i for i in items if i.get("blood_type") == blood_type]
@@ -58,6 +59,6 @@ def _public(item):
     keys = [
         "request_id", "blood_type", "city", "hospital", "note", "units",
         "urgency", "status", "created_at", "expires_at",
-        "requester_name", "requester_phone",
+        "requester_name", "requester_phone", "confirmed_count", "declined_count",
     ]
-    return {k: item.get(k) for k in keys}
+    return {k: (item.get(k) if item.get(k) is not None else 0) if k in ("confirmed_count", "declined_count") else item.get(k) for k in keys}
