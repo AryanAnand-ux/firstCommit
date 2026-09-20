@@ -106,6 +106,11 @@ python scripts/test_local.py
 - **Visual redesign (no AI-slop):** Fraunces serif + Manrope UI via Google Fonts; oxblood/crimson on warm paper with dotted-grain texture; crafted SVG drop logo/favicon/empty states; live-dot eyebrow; animated gap bars; step tiles; pill nav (mobile scrollable); redesigned badges/toggles/chat/typing dots/sign-in cards; dark ink footer; `prefers-reduced-motion` guard.
 - `scripts/test_local.py` extended to **50 checks** (parse_bool table, donation_eligible dates, live-cooldown donor skipped at match time). All pass.
 
+### Loop 8 �?" Local run catch (hour of submission)
+- Running the SPA locally exposed a **CDN 404**: the `<script>` referenced `dist/amazon-cognito-identity-js.min.js` which doesn't exist (real file is `dist/amazon-cognito-identity.min.js`), so `AmazonCognitoIdentity` was undefined and `app.js` crashed on load whenever `config.js` existed. Fixed by **vendoring the lib** at `frontend/vendor/amazon-cognito-identity-js.min.js` (local + offline-safe).
+- `Auth._pool` construction is now try/catch-guarded so a malformed `POOL_ID` can never crash the SPA (Cognito throws `Invalid UserPoolId format`).
+- Local preview = `scripts/`-independent mock server (temp `dev_server.py`) serving `frontend/` + canned `/stats`; `frontend/config.js` is gitignored so the same file never ships.
+
 ## Links
 
 - Event: <https://www.wemakedevs.org/aws/first-commit>
