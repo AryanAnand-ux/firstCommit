@@ -50,6 +50,21 @@ Parameters:
     Type: String
     Description: Amazon Bedrock model id used by the assistant (Converse API).
     Default: amazon.nova-lite-v1:0
+  EnableCostGuard:
+    Type: String
+    Description: Create an AWS Budget guard (+optional email alerts). Keep off if the deploy user lacks budgets permissions.
+    Default: 'false'
+    AllowedValues:
+      - 'true'
+      - 'false'
+  BudgetAlertEmail:
+    Type: String
+    Description: Email to receive budget alerts (only used when EnableCostGuard=true).
+    Default: ''
+
+Conditions:
+  CostGuardEnabled: !Equals [!Ref EnableCostGuard, 'true']
+  CostGuardEmailEnabled: !Not [!Equals [!Ref BudgetAlertEmail, '']]
 
 Resources:
   # ------------------------------------------------------------------
@@ -171,6 +186,8 @@ Resources:
           AttributeType: S
         - AttributeName: expires_at
           AttributeType: S
+        - AttributeName: requester_id
+          AttributeType: S
       KeySchema:
         - AttributeName: request_id
           KeyType: HASH
@@ -180,6 +197,14 @@ Resources:
             - AttributeName: status
               KeyType: HASH
             - AttributeName: expires_at
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+        - IndexName: RequesterIndex
+          KeySchema:
+            - AttributeName: requester_id
+              KeyType: HASH
+            - AttributeName: created_at
               KeyType: RANGE
           Projection:
             ProjectionType: ALL
@@ -239,6 +264,13 @@ Resources:
         AllowHeaders: "'Content-Type,Authorization,X-Amz-Date,X-Api-Key,X-Amz-Security-Token'"
         AllowOrigin: "'*'"
         MaxAge: "'600'"
+      MethodSettings:
+        - ResourcePath: /*
+          HttpMethod: '*'
+          MetricsEnabled: true
+          DataTraceEnabled: false
+          ThrottlingBurstLimit: 20
+          ThrottlingRateLimit: 10
 
   # ------------------------------------------------------------------
   # Functions
@@ -281,6 +313,19 @@ Resources:
             RestApiId: !Ref RaktaApi
             Path: /requests/{id}
             Method: patch
+
+  MyRequestsFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: src/my_requests
+      Handler: app.lambda_handler
+      Events:
+        MyRequests:
+          Type: Api
+          Properties:
+            RestApiId: !Ref RaktaApi
+            Path: /requests/mine
+            Method: get
 
   DonorFunction:
     Type: AWS::Serverless::Function
@@ -440,6 +485,91 @@ Resources:
               StringEquals:
                 AWS:SourceArn: !Sub arn:aws:cloudfront::${AWS::AccountId}:distribution/${FrontendDistribution}
 
+  Api5xxAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: raktasetu-api-5xx
+      AlarmDescription: API Gateway returned >= 5 5xx errors in 5 minutes
+      Namespace: AWS/ApiGateway
+      MetricName: 5XXError
+      Dimensions:
+        - Name: ApiName
+          Value: raktasetu-api
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 5
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+
+  CreateRequestErrorAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: rakta-create-request-errors
+      AlarmDescription: create_request lambda failed >= 3 times in 5 minutes
+      Namespace: AWS/Lambda
+      MetricName: Errors
+      Dimensions:
+        - Name: FunctionName
+          Value: !Ref CreateRequestFunction
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 3
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+
+  RaktaDashboard:
+    Type: AWS::CloudWatch::Dashboard
+    Properties:
+      DashboardName: rakta-live
+      DashboardBody: !Sub >
+        {"periodOverride":"inherit","widgets":[
+        {"type":"text","x":0,"y":0,"width":24,"height":2,"properties":{"markdown":"## RaktaSetu live ops (us-east-1)"}},
+        {"type":"metric","x":0,"y":2,"width":12,"height":8,"properties":{"metrics":[["AWS/ApiGateway","4XXError","ApiName","raktasetu-api"],["AWS/ApiGateway","5XXError","ApiName","raktasetu-api"]],"view":"timeSeries","stacked":false,"region":"${AWS::Region}","title":"API gateway errors"}},
+        {"type":"metric","x":12,"y":2,"width":12,"height":8,"properties":{"metrics":[["AWS/Lambda","Errors"]],"view":"timeSeries","stacked":false,"region":"${AWS::Region}","title":"Lambda errors"}},
+        {"type":"metric","x":0,"y":10,"width":12,"height":8,"properties":{"metrics":[["AWS/DynamoDB","ConsumedReadCapacityUnits"],["AWS/DynamoDB","ConsumedWriteCapacityUnits"]],"view":"timeSeries","stacked":false,"region":"${AWS::Region}","title":"DynamoDB consumed capacity"}},
+        {"type":"metric","x":12,"y":10,"width":12,"height":8,"properties":{"metrics":[["AWS/SNS","NumberOfNotificationsDelivered"],["AWS/SNS","NumberOfNotificationsFailed"]],"view":"timeSeries","stacked":false,"region":"${AWS::Region}","title":"SNS SMS volume"}}]}
+
+  BudgetAlertTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: raktasetu-budget-alerts
+
+  RaktaBudget:
+    Type: AWS::Budgets::Budget
+    Condition: CostGuardEnabled
+    Properties:
+      Budget:
+        BudgetName: raktasetu-monthly
+        BudgetType: COST
+        TimeUnit: MONTHLY
+        CostFilters:
+          Service:
+            - Amazon API Gateway
+            - Amazon Bedrock
+            - Amazon CloudFront
+            - Amazon Cognito
+            - Amazon DynamoDB
+            - AWS Lambda
+            - Amazon Simple Notification Service
+            - Amazon Simple Storage Service
+        BudgetLimit:
+          Amount: 10
+          Unit: USD
+      NotificationsWithSubscribers:
+        - Notification:
+            NotificationType: ACTUAL
+            ComparisonOperator: GREATER_THAN
+            Threshold: 75
+            ThresholdType: PERCENTAGE
+          Subscribers: !If
+            - CostGuardEmailEnabled
+            - - SubscriptionType: EMAIL
+                Address: !Ref BudgetAlertEmail
+            - - SubscriptionType: SNS
+                Address: !Ref BudgetAlertTopic
+
 Outputs:
   ApiEndpoint:
     Description: API Gateway endpoint (allow few minutes for distribution)
@@ -459,3 +589,9 @@ Outputs:
   CloudFrontDistributionId:
     Description: CloudFront distribution id (used for cache invalidation)
     Value: !Ref FrontendDistribution
+  OpsDashboard:
+    Description: CloudWatch dashboard name for live ops monitoring
+    Value: !Ref RaktaDashboard
+  BudgetName:
+    Description: Monthly cost budget (only created when EnableCostGuard=true)
+    Value: !If [CostGuardEnabled, raktasetu-monthly, disabled]

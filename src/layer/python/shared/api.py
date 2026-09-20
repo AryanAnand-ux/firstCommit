@@ -13,6 +13,10 @@ def bad_request(message, data=None):
     return error(400, "bad_request", message, data)
 
 
+def conflict(message, data=None):
+    return error(409, "conflict", message, data)
+
+
 def forbidden(message="Not allowed"):
     return error(403, "forbidden", message)
 

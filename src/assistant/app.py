@@ -19,6 +19,7 @@ Your job:
    - Always advise: don't give blood if you feel unwell; a blood-bank staff member does the final check on donation day.
 2. If the user asks to RAISE a request for blood/platelets (e.g. "I need O+ in Pune", "my father needs urgent B- at Calcutta hospital"), call the create_request tool and collect: blood_type, city, urgent/planned, units (default 1), optional hospital and note. Get the user's phone (E.164 like +919876543210) from them first.
 3. If the user asks what's urgently needed nearby, call list_open_requests.
+4. If the user asks about THEIR OWN requests ("my requests", "what did I post", "status of my request"), call my_requests.
 
 Keep answers under 60 words in chat, in plain English or short Hinglish. Never invent availability: if there is no tool result, say you don't have that data."""
 
@@ -40,7 +41,7 @@ def lambda_handler(event, context):
         return ok({"reply": "The assistant service is warming up. Please try again in a moment."})
 
     messages = [{"role": "user", "content": [{"text": message}]}]
-    tools = [_create_request_tool(), _list_open_requests_tool()]
+    tools = [_create_request_tool(), _list_open_requests_tool(), _my_requests_tool()]
 
     try:
         for _ in range(MAX_ITERATIONS):
@@ -112,6 +113,16 @@ def _list_open_requests_tool():
     }
 
 
+def _my_requests_tool():
+    return {
+        "toolSpec": {
+            "name": "my_requests",
+            "description": "List the signed-in user's own posted requests and their status (open/fulfilled/cancelled/expired).",
+            "inputSchema": {"json": {"type": "object", "properties": {}}},
+        }
+    }
+
+
 def _run_tool(reply, user):
     tool_block = next(c for c in reply["content"] if "toolUse" in c)
     use = tool_block["toolUse"]
@@ -121,6 +132,8 @@ def _run_tool(reply, user):
             result = _do_create(args, user)
         elif name == "list_open_requests":
             result = _do_list(args)
+        elif name == "my_requests":
+            result = _do_my_requests(user)
         else:
             result = {"ok": False, "message": f"Unknown tool {name}"}
     except Exception as exc:
@@ -132,6 +145,8 @@ def _do_create(args, user):
     from shared.domain import create_request
     item, issues = create_request(user, args, notify_people=True)
     if item is None:
+        if issues.get("conflict"):
+            return {"ok": False, "message": issues["conflict"]}
         return {"ok": False, "message": issues.get("validation", "Invalid request")}
     return {
         "ok": True,
@@ -142,6 +157,44 @@ def _do_create(args, user):
         "matched": issues.get("matched", 0),
         "message": "Request created and matching donors are being alerted.",
     }
+
+
+def _do_my_requests(user):
+    table = db.table("REQUESTS_TABLE")
+    items = []
+    last = None
+    while True:
+        kwargs = {
+            "IndexName": "RequesterIndex",
+            "KeyConditionExpression": "#r = :r",
+            "ExpressionAttributeNames": {"#r": "requester_id"},
+            "ExpressionAttributeValues": {":r": user["sub"]},
+            "ScanIndexForward": False,
+            "Limit": 50,
+        }
+        if last:
+            kwargs["ExclusiveStartKey"] = last
+        resp = table.query(**kwargs)
+        items.extend(resp.get("Items", []))
+        last = resp.get("LastEvaluatedKey")
+        if not last or len(items) >= 100:
+            break
+
+    rows = [
+        {
+            "request_id": i.get("request_id"),
+            "blood_type": i.get("blood_type"),
+            "city": i.get("city"),
+            "hospital": i.get("hospital"),
+            "units": i.get("units"),
+            "urgency": i.get("urgency"),
+            "status": i.get("status"),
+            "created_at": i.get("created_at"),
+            "expires_at": i.get("expires_at"),
+        }
+        for i in items[:20]
+    ]
+    return {"count": len(rows), "requests": rows}
 
 
 def _do_list(args):

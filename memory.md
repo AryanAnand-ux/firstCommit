@@ -62,6 +62,42 @@ python scripts/test_local.py
 - Agent tool-use with Nova: keep tools minimal; guard the loop with a max-iteration cap.
 - Free tier math is demoable: show the cost section in the writeup ($0–few cents/weekend).
 
+## Post-commit improvement loops (5+)
+
+### Loop 1 — Requester lifecycle
+- Added `RequesterIndex` GSI on RequestsTable (PK `requester_id`, RANGE `created_at`) → `GET /requests/mine` (`src/my_requests/app.py`) + duplicate-request guard.
+- `create_request` now returns **409 conflict** (a new `conflict()` response in `shared/api.py`) when the same user already has an open request for the same (blood, city).
+- Fixed **is_donor overwrite bug**: `_upsert_user` now merges the existing profile (preserves `is_donor` and the donor's real name instead of replacing it with the requester email).
+- Frontend Requests page: "My requests" section with **Mark fulfilled / Cancel / Share (WhatsApp)** buttons wired to `PATCH /requests/{id}` (share URL uses `location.origin`).
+
+### Loop 2 — Ops maturity
+- API Gateway `MethodSettings`: throttling (burst 20 / rate 10), `MetricsEnabled`, `DataTraceEnabled: false` on `RaktaApi`.
+- Added `Api5xxAlarm` + `CreateRequestErrorAlarm` (CloudWatch), and `RaktaDashboard` (`rakta-live`) with API errors, Lambda errors, DDB capacity, SNS SMS volume.
+- Optional cost guard: `EnableCostGuard` / `BudgetAlertEmail` parameters + `RaktaBudget` (AWS::Budgets::Budget, $10/mo, 75% alert) + `BudgetAlertTopic`. **Default `false`** — budgets perms often missing on fresh deploy roles.
+- Frontend `api()` gives friendly 429 ("too fast") message; 409 surfaces the server message.
+
+### Loop 3 — Data integrity
+- `respond_match` is **idempotent**: re-asserting the same status returns 200 without re-SMS; flipping after responding → 409. Confirm on a non-open (fulfilled/cancelled/expired) request → 409.
+- `update_request` fulfill now SMSes **confirmed** donors (personalized "reach the requester now") and closes `sent` matches without leaving them hanging; cancel notifies+cancels **all** responders (sent AND confirmed).
+- `expire_stale` cascades: `_close_pending_matches` marks `sent` matches `cancelled` when a request expires (confirmed donors are preserved).
+- `seed_sample_data.py` now seeds fulfilled/expired history + a confirmed match so the demo dashboard shows a lifecycle.
+- Donor page: "Know before you donate" education card (eligibility, intervals, day-of prep).
+
+### Loop 4 — Assistant (Bedrock)
+- New `my_requests` tool in `src/assistant/app.py` (queries `RequesterIndex`) so the bot can answer "what are my requests?".
+- `create_request` tool now surfaces the **conflict** message instead of a raw validation error.
+- Chat UI: quick-suggestion chips ("Can I donate?", "I need B+ in Nagpur", "What are my requests?") that submit the assistant form.
+- Model/region stays a stack Parameter (`AssistantModelId`, default `amazon.nova-lite-v1:0`) so we can swap regions/models at deploy without code changes.
+
+### Loop 5 — Design/UX
+- Phone inputs are now `type="tel"` + `inputmode="tel"` + `autocomplete="tel"` (create + donor forms) with a `[+0-9]{10,15}` pattern.
+- `aria-live="polite"` on chat box (toast already had it) + `prefers-reduced-motion` CSS guard.
+- Consistent empty states across My requests / alerts / feed.
+
+### Loop 6 — Test depth + docs
+- `scripts/test_local.py` now covers the **domain layer** with an in-memory dict-backed fake (FakeTable/FakeEnv: puts, gets, GSI queries for RequesterIndex / DonorMatchIndex / RequestIndex). Covers: create happy path, `is_donor` preservation, **duplicate-request 409**, cross-city/cross-user allowance, eligibility+availability match filter. **All 33 checks pass.**
+- Docs (README / architecture.md) refreshed for the new endpoint, GSI, alarms/dashboard/budget, assistant tool, and test coverage.
+
 ## Links
 
 - Event: <https://www.wemakedevs.org/aws/first-commit>

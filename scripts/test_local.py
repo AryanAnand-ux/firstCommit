@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Pure-logic tests for shared validation. No AWS needed. Usage: python scripts/test_local.py"""
+"""Pure-logic tests for shared validation + domain layer. No AWS needed. Usage: python scripts/test_local.py"""
 
 import os
 import sys
@@ -48,6 +48,125 @@ print("parse_body")
 eq("json body", parse_body({"body": '{"a":1}'}), {"a": 1})
 eq("missing", parse_body({}), {})
 eq("garbage", parse_body({"body": "nope"}), {})
+
+print("domain layer")
+import shared.domain as dom  # noqa: E402
+
+KEY_FIELD = {
+    "USERS_TABLE": "user_id",
+    "DONORS_TABLE": "donor_id",
+    "REQUESTS_TABLE": "request_id",
+    "MATCHES_TABLE": "match_id",
+}
+
+
+class FakeTable:
+    def __init__(self, key):
+        self.key = key
+        self.store = {}
+
+    def get_item(self, Key):
+        return {"Item": self.store.get(Key[self.key])}
+
+    def put_item(self, Item):
+        self.store[Item[self.key]] = Item
+        return {}
+
+    def query(self, **kw):
+        items = list(self.store.values())
+        vals = kw.get("ExpressionAttributeValues", {})
+        idx = kw.get("IndexName")
+        if idx == "RequesterIndex":
+            out = [i for i in items if i.get("requester_id") == vals.get(":r")]
+            out.sort(key=lambda i: i.get("created_at", ""), reverse=not kw.get("ScanIndexForward", True))
+            return {"Items": out[: kw.get("Limit", 100)]}
+        if idx == "DonorMatchIndex":
+            city_key = vals.get(":ck", "#")
+            out = [i for i in items if i.get("blood_type") == vals.get(":bt") and str(i.get("match_key", "")).startswith(city_key)]
+            out = [i for i in out if i.get("donation_eligible") == vals.get(":t") and i.get("available") == vals.get(":t")]
+            return {"Items": out[: kw.get("Limit", 100)]}
+        if idx == "RequestIndex":
+            return {"Items": [i for i in items if i.get("request_id") == vals.get(":r")]}
+        return {"Items": []}
+
+
+class FakeEnv:
+    URGENCIES = {"urgent", "planned"}
+
+    def __init__(self):
+        self.tables = {name: FakeTable(key) for name, key in KEY_FIELD.items()}
+        self.donor_msgs = []
+        self.requester_msgs = []
+        self.sms_msgs = []
+
+    def table(self, name):
+        return self.tables[name]
+
+    def notify_donor(self, donor, text):
+        self.donor_msgs.append(donor["donor_id"])
+        return True
+
+    def notify_requester(self, phone, text):
+        self.requester_msgs.append(phone)
+        return True
+
+    def send_sms(self, phone, text):
+        self.sms_msgs.append(phone)
+        return True
+
+
+def new_env():
+    env = FakeEnv()
+    dom.db = env
+    dom.notify = env
+    return env
+
+
+def one_request(env, blood="O+", city="pune", phone="+919876543210", user=None, **extra):
+    payload = {"blood_type": blood, "city": city, "phone": phone, "urgency": "urgent", "units": 1}
+    payload.update(extra)
+    return dom.create_request(user or {"sub": "u1", "email": "a@b.c"}, payload, notify_people=True)
+
+
+env = new_env()
+item, meta = one_request(env)
+eq("create -> open", item["status"], "open")
+eq("create keeps meta", {"matched": 0, "alerted": 0}, meta)
+eq("create requester id", item["requester_id"], "u1")
+eq("public strips internals", "requester_id" not in dom.public_request(item), True)
+
+env = new_env()
+env.table("USERS_TABLE").store["u1"] = {"user_id": "u1", "is_donor": True, "name": "Old", "email": "a@b.c"}
+one_request(env)
+eq("donor flag preserved", env.table("USERS_TABLE").store["u1"]["is_donor"], True)
+eq("donor name preserved", env.table("USERS_TABLE").store["u1"]["name"], "Old")
+
+env = new_env()
+one_request(env, blood="O+", city="Pune")
+item2, issues2 = one_request(env, blood="O+", city="Pune")
+eq("duplicate blocked", item2, None)
+eq("duplicate says conflict", issues2.get("conflict") is not None, True)
+item3, _ = one_request(env, blood="O+", city="Mumbai")
+eq("different city allowed", item3 is not None, True)
+one_request(env, city="Pune", user={"sub": "u2", "email": "c@d.e"})
+eq("different user allowed", any(r.get("requester_id") == "u1" and r.get("status") == "open" for r in env.table("REQUESTS_TABLE").store.values()), True)
+
+env = new_env()
+for did, blood, city, eligible, available in [
+    ("d1", "O+", "pune", True, True),
+    ("d2", "O+", "pune", True, False),
+    ("d3", "O+", "mumbai", True, True),
+    ("d4", "A+", "pune", True, True),
+]:
+    env.table("DONORS_TABLE").store[did] = {
+        "donor_id": did, "name": "D", "phone": "+919800000000", "blood_type": blood, "city": city,
+        "donation_eligible": eligible, "available": available, "match_key": f"{city}#{did}",
+    }
+item, meta = one_request(env)
+eq("only eligible+available matched", meta["matched"], 1)
+eq("matched donor is d1", env.donor_msgs, ["d1"])
+
+print()
 
 print()
 if FAIL:

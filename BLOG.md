@@ -13,7 +13,7 @@ So for the First Commit hackathon we built **RaktaSetu**: post a request (blood 
 Everything runs inside the AWS Free Tier from a single SAM template:
 
 - **API Gateway** + **Cognito** auth
-- **9 Lambda** functions (Python 3.12)
+- **10 Lambda** functions (Python 3.12)
 - **DynamoDB** on-demand, with the matching hot path as one GSI query (`blood_type` primary, `city#` sort prefix)
 - **SNS SMS** for alerts (SenderID `RAKTA`)
 - **EventBridge** to sweep stale requests + **DynamoDB TTL** for cleanup

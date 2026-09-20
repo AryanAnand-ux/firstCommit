@@ -1,4 +1,4 @@
-from shared.api import ok, bad_request, not_found, forbidden, identity
+from shared.api import ok, bad_request, not_found, forbidden, conflict, identity
 from shared import db, notify
 from shared.validate import parse_body
 from shared.db import now_iso
@@ -23,6 +23,19 @@ def lambda_handler(event, context):
         return forbidden("Only the matched donor can respond")
 
     new_status = "confirmed" if action == "confirm" else "declined"
+    current = item.get("status")
+
+    if current in {"confirmed", "declined"}:
+        if current == new_status:
+            return ok({"status": new_status, "match": _public(item)})
+        return conflict(f"You already responded to this alert as {current}.")
+
+    if action == "confirm":
+        request_table = db.table("REQUESTS_TABLE")
+        request = request_table.get_item(Key={"request_id": item.get("request_id")}).get("Item")
+        if not request or request.get("status") != "open":
+            return conflict("This request is no longer active, so your confirmation is closed.")
+
     table.update_item(
         Key={"match_id": match_id},
         UpdateExpression="SET #st = :s, responded_at = :r",

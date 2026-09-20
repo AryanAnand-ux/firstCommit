@@ -27,11 +27,17 @@ def create_request(requester, payload, notify_people=True):
     if urgency not in db.URGENCIES:
         urgency = "planned"
 
-    units = 1
-    try:
-        units = max(1, min(int(payload.get("units") or 1), 4))
-    except (TypeError, ValueError):
-        pass
+    units = max(1, min(_to_int(payload.get("units"), 1), 4))
+
+    requester_id = requester.get("sub", "")
+    open_request = _existing_open_request(requester_id, blood_type, city)
+    if open_request:
+        return None, {
+            "conflict": (
+                f"You already have an open {blood_type} request in {city.title()}. "
+                f"Fulfil or cancel it first, or let it expire."
+            )
+        }
 
     now = datetime.now(timezone.utc)
     hours = URGENT_HOURS if urgency == "urgent" else PLANNED_HOURS
@@ -42,7 +48,7 @@ def create_request(requester, payload, notify_people=True):
 
     item = {
         "request_id": request_id,
-        "requester_id": requester.get("sub", ""),
+        "requester_id": requester_id,
         "requester_email": requester.get("email", ""),
         "requester_name": username,
         "requester_phone": phone,
@@ -59,16 +65,48 @@ def create_request(requester, payload, notify_people=True):
     }
 
     db.table("REQUESTS_TABLE").put_item(Item=item)
-
-    profile = {"user_id": requester.get("sub"), "email": requester.get("email"), "name": username, "phone": phone, "is_donor": False}
-    profile = {k: v for k, v in profile.items() if v}
-    db.table("USERS_TABLE").put_item(Item=profile)
+    _upsert_user(requester, str(payload.get("name") or "").strip(), phone)
 
     matched, alerted = [], 0
     if notify_people:
         matched, alerted = _match_and_alert(item)
 
     return item, {"matched": len(matched), "alerted": alerted}
+
+
+def _existing_open_request(requester_id, blood_type, city):
+    if not requester_id:
+        return None
+    table = db.table("REQUESTS_TABLE")
+    resp = table.query(
+        IndexName="RequesterIndex",
+        KeyConditionExpression="#r = :r",
+        ExpressionAttributeNames={"#r": "requester_id"},
+        ExpressionAttributeValues={":r": requester_id},
+        ScanIndexForward=False,
+        Limit=10,
+    )
+    for item in resp.get("Items", []):
+        if item.get("status") == "open" and item.get("blood_type") == blood_type and item.get("city") == city:
+            return item
+    return None
+
+
+def _upsert_user(requester, name, phone):
+    table = db.table("USERS_TABLE")
+    user_id = requester.get("sub", "")
+    if not user_id:
+        return
+    existing = table.get_item(Key={"user_id": user_id}).get("Item") or {}
+    profile = {
+        "user_id": user_id,
+        "email": requester.get("email", "") or existing.get("email", ""),
+        "name": name or existing.get("name") or requester.get("email", ""),
+        "phone": phone,
+        "is_donor": bool(existing.get("is_donor", False)),
+    }
+    profile = {k: v for k, v in profile.items() if v is not None}
+    table.put_item(Item=profile)
 
 
 def _match_and_alert(request_item):
@@ -131,3 +169,19 @@ def _match_and_alert(request_item):
         f"{len(matched)} matching donor(s) alerted. Track it in the app.",
     )
     return matched, alerted
+
+
+def public_request(item):
+    keys = [
+        "request_id", "blood_type", "city", "hospital", "note", "units",
+        "urgency", "status", "created_at", "expires_at",
+        "requester_name", "requester_phone",
+    ]
+    return {k: item.get(k) for k in keys}
+
+
+def _to_int(value, default):
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default

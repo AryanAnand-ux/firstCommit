@@ -103,7 +103,13 @@ async function api(path, opts = {}) {
   let data = {};
   try { data = await res.json(); } catch (e) {}
   if (!res.ok) {
-    const err = new Error(data.message || ("Request failed (" + res.status + ")"));
+    const friendly =
+      res.status === 429
+        ? "You are sending requests too fast. Wait a moment and try again."
+        : res.status === 409 || res.status === 400 || res.status === 403
+        ? data.message
+        : data.message || ("Request failed (" + res.status + ")");
+    const err = new Error(friendly);
     err.status = res.status;
     throw err;
   }
@@ -242,7 +248,7 @@ const Views = {
           </div>
           <div class="field">
             <label for="cphone">Contact phone * (E.164)</label>
-            <input id="cphone" required placeholder="+919876543210" autocomplete="off" />
+            <input id="cphone" required type="tel" inputmode="tel" autocomplete="tel" placeholder="+919876543210" pattern="[+0-9]{10,15}" />
           </div>
           <div class="field full">
             <label for="cnote">Note to donors</label>
@@ -254,10 +260,14 @@ const Views = {
         </form>
       </div>
 
+      <h2 class="sec-title" style="font-size:18px" id="myReqTitle"></h2>
+      <div id="myReqList"></div>
+
       <h2 class="sec-title" style="font-size:18px">Live feed</h2>
       <div class="chips" id="reqChips"></div>
       <div id="reqList"><div class="empty">Loading…</div></div>
     `;
+    loadMyRequests();
     renderStatusChips();
     loadRequests("open");
   },
@@ -274,7 +284,7 @@ const Views = {
         </div>
         <div class="field">
           <label for="dphone">Phone * (E.164)</label>
-          <input id="dphone" required placeholder="+919876543210" autocomplete="off" />
+          <input id="dphone" required type="tel" inputmode="tel" autocomplete="tel" placeholder="+919876543210" pattern="[+0-9]{10,15}" />
         </div>
         <div class="field">
           <label for="dbt">Blood type *</label>
@@ -295,6 +305,19 @@ const Views = {
           <button class="btn block" id="dbtn" data-label="Save profile">Save profile</button>
         </div>
       </form>
+
+      <div class="card facts">
+        <h3>Know before you donate</h3>
+        <ul class="clean">
+          <li><strong>Eligibility:</strong> you must be 18–65, weigh at least 45&nbsp;kg, and be in good health on the day.</li>
+          <li><strong>Intervals:</strong> wait 3 months between whole-blood donations in India; platelets can be given more often (2–4 weeks) after medical clearance.</li>
+          <li><strong>Not eligible today:</strong> fever, active cold/flu, on antibiotics, low haemoglobin, recent tattoo/piercing (last 6 months), or pregnant.</li>
+          <li><strong>Before:</strong> hydrate well, eat a light meal 2–3 hours prior, avoid alcohol 24h before, sleep 8 hours.</li>
+          <li><strong>After:</strong> rest 10–15 min, eat something sweet, avoid heavy lifting for a few hours, drink extra fluids.</li>
+          <li><strong>You save lives:</strong> one donation ~350&nbsp;ml can help up to 3 patients — and only ~1% of India&apos;s eligible population donates. Be the 1%.</li>
+        </ul>
+        <p class="muted" style="margin-top:12px;font-size:13px">Not medical advice. Eligibility is verified at the blood bank before every donation.</p>
+      </div>
     `;
     if (Auth.email) loadDonorProfile();
   },
@@ -314,13 +337,24 @@ const Views = {
     app.innerHTML = `
       <h1 class="sec-title" style="margin-top:8px">Assistant</h1>
       <p class="sec-sub">Ask about donating, or just tell it: <em>“I need B+ plasma in Nagpur”</em>.</p>
-      <div class="chat" id="chatBox"></div>
+      <div class="chat" id="chatBox" aria-live="polite"></div>
+      <div class="chips" id="assistantChips">
+        <button class="chip" type="button">Can I donate?</button>
+        <button class="chip" type="button">I need B+ in Nagpur</button>
+        <button class="chip" type="button">What are my requests?</button>
+      </div>
       <form class="chat-input" data-action="askAssistant">
         <input id="msg" placeholder="Ask Rakta…" autocomplete="off" />
         <button class="btn" id="askBtn" data-label="Send">Send</button>
       </form>
     `;
     addBubble("bot", "Hi, I'm Rakta. I can answer donor-eligibility questions and post requests for you. What's the situation?");
+    $("#assistantChips").addEventListener("click", (e) => {
+      const b = e.target.closest(".chip");
+      if (!b) return;
+      $("#msg").value = b.textContent;
+      $('form[data-action="askAssistant"]').dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+    });
     $("#msg").focus();
   },
 
@@ -417,6 +451,64 @@ function renderStatusChips() {
     });
     el.appendChild(b);
   });
+}
+
+async function loadMyRequests() {
+  const title = $("#myReqTitle");
+  const el = $("#myReqList");
+  if (!el) return;
+  if (!Auth.email) {
+    title.textContent = "";
+    el.innerHTML =
+      '<div class="empty"><p><a href="#/auth">Sign in</a> to post and track your own requests.</p></div>';
+    return;
+  }
+  try {
+    const d = await api("/requests/mine");
+    title.textContent = "My requests";
+    el.innerHTML = d.requests.length
+      ? d.requests.map((r) => myRequestCard(r)).join("")
+      : '<div class="empty"><p>You have not posted any requests yet. Need blood in your city? Post one above.</p></div>';
+    $$("#myReqList [data-update]").forEach((b) =>
+      b.addEventListener("click", () => updateMyRequest(b.dataset.id, b.dataset.update, b))
+    );
+  } catch (e) {
+    title.textContent = "";
+    el.innerHTML = '<div class="empty">' + esc(e.message) + "</div>";
+  }
+}
+
+function myRequestCard(r) {
+  const canAct = r.status === "open";
+  return `
+  <div class="card ${r.urgency === "urgent" ? "urgent" : "planned"}">
+    <div class="card-top">
+      <span class="bt-chip">${esc(r.blood_type)}</span>
+      <span class="badge ${r.status === "open" ? "sent" : r.status}">${esc(r.status)}</span>
+      <span class="badge ${r.urgency === "urgent" ? "urgent" : "planned"}">${esc(r.urgency)}</span>
+      <span class="meta">expires ${esc((r.expires_at || "").replace("T", " "))}</span>
+    </div>
+    <div class="meta">${esc(r.hospital || r.city)} · ${esc(r.city)} · ${esc(r.units)} unit(s)</div>
+    ${r.note ? `<p class="muted" style="margin-top:6px">${esc(r.note)}</p>` : ""}
+    ${canAct ? `<div class="row"><span class="muted">Donors are being alerted. Keep this live until someone confirms.</span>
+      <span style="margin-left:auto;display:flex;gap:8px">
+        <a class="btn sec" style="padding:8px 14px" target="_blank" href="https://wa.me/?text=${encodeURIComponent("Need " + r.blood_type + " in " + r.city + ". Help spread the word — " + location.origin + location.pathname + "#/requests")}">Share</a>
+        <button class="btn ok" data-update="fulfill" data-id="${esc(r.request_id)}" data-label="Mark fulfilled">Mark fulfilled</button>
+        <button class="btn sec" data-update="cancel" data-id="${esc(r.request_id)}" data-label="Cancel request">Cancel</button>
+      </span></div>` : ""}
+  </div>`;
+}
+
+async function updateMyRequest(id, action, btn) {
+  busy(btn, true);
+  try {
+    const r = await api("/requests/" + id, { method: "PATCH", body: JSON.stringify({ action }) });
+    toast("Request " + r.status + ". Donors have been notified.");
+    loadMyRequests();
+  } catch (e) {
+    busy(btn, false);
+    toast(e.message, true);
+  }
 }
 
 async function loadRequests(status) {

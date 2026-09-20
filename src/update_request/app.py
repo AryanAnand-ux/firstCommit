@@ -47,18 +47,17 @@ def _notify_matches(item, action):
         ExpressionAttributeNames={"#r": "request_id"},
         ExpressionAttributeValues={":r": item["request_id"]},
     )
-    sent = [m for m in resp.get("Items", []) if m.get("status") == "sent"]
+    matches = resp.get("Items", [])
+    sent = [m for m in matches if m.get("status") == "sent"]
+    confirmed = [m for m in matches if m.get("status") == "confirmed"]
 
     if action == "fulfill":
-        message = (
-            f"[RAKTA] The request for {item['blood_type']} in {item.get('city','').title()} "
-            f"has been fulfilled. Thank you for responding. - RaktaSetu"
-        )
-    else:
-        message = (
-            f"[RAKTA] The request for {item['blood_type']} in {item.get('city','').title()} "
-            f"was cancelled by the requester. Thanks for your help. - RaktaSetu"
-        )
+        for m in confirmed:
+            notify.notify_donor(
+                m,
+                f"[RAKTA] Great news — the {item['blood_type']} request in {item.get('city','').title()} "
+                f"is ready. Reach {item.get('requester_name','the requester')} at {item.get('requester_phone')} now. - RaktaSetu",
+            )
         for m in sent:
             matches_table.update_item(
                 Key={"match_id": m["match_id"]},
@@ -66,11 +65,26 @@ def _notify_matches(item, action):
                 ExpressionAttributeNames={"#st": "status"},
                 ExpressionAttributeValues={":s": "cancelled"},
             )
+            notify.send_sms(
+                m.get("donor_phone"),
+                f"[RAKTA] The {item['blood_type']} request in {item.get('city','').title()} has been fulfilled "
+                f"by another donor. Thank you for offering help. - RaktaSetu",
+            )
+        return len(confirmed) + len(sent)
 
-    count = 0
-    for m in sent:
-        count += 1 if notify.send_sms(m.get("donor_phone"), message) else 0
-    return count
+    for m in sent + confirmed:
+        matches_table.update_item(
+            Key={"match_id": m["match_id"]},
+            UpdateExpression="SET #st = :s",
+            ExpressionAttributeNames={"#st": "status"},
+            ExpressionAttributeValues={":s": "cancelled"},
+        )
+        notify.send_sms(
+            m.get("donor_phone"),
+            f"[RAKTA] The request for {item['blood_type']} in {item.get('city','').title()} was cancelled "
+            f"by the requester. Thanks for your help. - RaktaSetu",
+        )
+    return len(sent) + len(confirmed)
 
 
 def error_500():

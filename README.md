@@ -63,26 +63,27 @@ flowchart LR
     SNS -.-> Phone[Donor phones]
 ```
 
-**Request lifecycle:** post → validate → write (DynamoDB TTL = 24h urgent / 72h planned) → query donors GSI (`blood_type` partition, `city#` prefix) → up to 20 matches → SMS each donor + confirmation SMS to requester → donor confirms/declines → requester gets the donor's number → fulfill/cancel → expiry sweeper + TTL clean up automatically.
+**Request lifecycle:** post → validate → guard (only one *open* request per user per blood+city → 409 on dupes) → write (DynamoDB TTL = 24h urgent / 72h planned) → query donors GSI (`blood_type` partition, `city#` prefix) → up to 20 eligible+available matches → SMS each donor + confirmation SMS to requester → donor confirms/declines (idempotent; can't respond twice) → requester gets the donor's number → fulfill/cancel notifies confirmed donors and cascades status → expiry sweeper closes pending matches and TTL cleans up.
 
 ## Repo layout
 
 ```
-template.yaml          # full SAM stack (21 resources, one deploy)
+template.yaml          # full SAM stack (27 resources, one deploy)
 deploy.ps1 / deploy.sh # ONE-COMMAND deploy: build -> stack -> frontend -> URL
 src/
   layer/python/shared/  # shared layer: DDB access, SMS, validation, API helpers, matching domain
-  create_request/       # post request + match + alert
+  create_request/       # post request + match + alert (409 on duplicate open request)
   list_requests/        # browse by status / type / city
+  my_requests/          # GET /requests/mine — requester's own requests (new GSI)
   update_request/       # fulfill / cancel + donor notifications
   donor/                # donor profile + eligibility flag
   matches/              # "My Alerts"
-  respond_match/        # confirm / decline
+  respond_match/        # confirm / decline (idempotent)
   stats/                # public live dashboard
-  assistant/            # Bedrock Nova agent (tool use)
-  expire_stale/         # EventBridge sweeper
+  assistant/            # Bedrock Nova agent (tool use: create/list/my requests)
+  expire_stale/         # EventBridge sweeper (cascades to pending matches)
 frontend/               # vanilla JS SPA (no build step)
-scripts/                # seed, smoke test, local logic tests
+scripts/                # seed (+ history), smoke test, local logic tests (33 checks)
 ```
 
 Plus: `prd.md`, `architecture.md`, `design.md`, `rules.md`, `task.md`, `memory.md`.

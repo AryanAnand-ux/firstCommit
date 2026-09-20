@@ -16,45 +16,55 @@ Status: 🔴 do today (Sept 20), 🟡 if time, ✅ done.
 
 ## Build code
 
-- [ ] ✅ SAM `template.yaml` (9 AWS services)
-- [ ] 🔴 `assistant/app.py` — Bedrock Nova agent w/ tool use
-- [ ] 🔴 `donor/app.py` — profile GET/PUT + eligibility flag
-- [ ] 🔴 `matches/app.py` — donor "My Alerts"
-- [ ] 🔴 `respond_match/app.py` — confirm/decline → notify requester
-- [ ] 🔴 `stats/app.py` — public dashboard
-- [ ] 🔴 `expire_stale/app.py` — EventBridge sweeper
-- [ ] 🔴 `update_request/app.py` — fulfill/cancel
-- [ ] 🔴 `list_requests/app.py` — browse open requests
-- [ ] ✅ `create_request/app.py` — post + match + SMS
-- [ ] ✅ shared layer (db/notify/validate/api/domain)
+- [x] ✅ SAM `template.yaml` (10 AWS services incl. CloudWatch + Budget; 27 resources)
+- [x] ✅ `assistant/app.py` — Bedrock Nova agent w/ tool use (create_request, list_open_requests, my_requests)
+- [x] ✅ `donor/app.py` — profile GET/PUT + eligibility flag
+- [x] ✅ `matches/app.py` — donor "My Alerts"
+- [x] ✅ `respond_match/app.py` — confirm/decline → notify requester (idempotent)
+- [x] ✅ `stats/app.py` — public dashboard
+- [x] ✅ `expire_stale/app.py` — EventBridge sweeper (cascades pending matches)
+- [x] ✅ `update_request/app.py` — fulfill/cancel (notifies confirmed donors)
+- [x] ✅ `list_requests/app.py` — browse open requests
+- [x] ✅ `my_requests/app.py` — GET /requests/mine (RequesterIndex GSI)
+- [x] ✅ `create_request/app.py` — post + match + SMS (409 on duplicate open request)
+- [x] ✅ shared layer (db/notify/validate/api/domain)
 
 ## Frontend
 
-- [ ] `frontend/index.html` + `app.css` + `app.js` (design tokens in `design.md`)
-- [ ] Auth (Cognito signup/confirm/login) via amazon-cognito-identity-js
-- [ ] Pages: Home/stats, Requests, Donor profile, My Alerts, Assistant
-- [ ] `config.template.js` → generated `config.js` with live API/userpool values
+- [x] ✅ `frontend/index.html` + `app.css` + `app.js` (design tokens in `design.md`)
+- [x] ✅ Auth (Cognito signup/confirm/login) via amazon-cognito-identity-js
+- [x] ✅ Pages: Home/stats, Requests (+ My requests w/ fulfill/cancel/share), Donor profile (+ education card), My Alerts, Assistant (+ quick chips)
+- [x] ✅ `config.template.js` → generated `config.js` with live API/userpool values
 
 ## Docs (for judges + writeup)
 
-- [ ] ✅ `prd.md`, `architecture.md`, `rules.md`, `design.md`
-- [ ] ✅ `README.md` (hero + architecture + quickstart + what-we-learned)
+- [x] ✅ `prd.md`, `architecture.md`, `rules.md`, `design.md`
+- [x] ✅ `README.md` (hero + architecture + quickstart + what-we-learned)
 - [ ] 🔴 `WRITEUP.md` — final copy w/ AI-tools disclosure
 - [ ] 🔴 `DEMO_SCRIPT.md` — 3-min beat sheet
 - [ ] 🟡 `BLOG.md` — AWS Builder Center post (top-5-blogs = Logitech keyboard)
 
 ## Submission (deadline: today, Sept 20)
 
-- [ ] `git push` to **public** GitHub repo (history = inside Sept 17–20)
+- [x] ✅ `git push` to **public** GitHub repo (history = inside Sept 17–20)
 - [ ] Deploy live; grab **FrontendUrl**
 - [ ] Record <3-min YouTube demo (unlisted); verify in signed-out browser
 - [ ] Fill submission form: repo + video + writeup
 - [ ] Request extra credits if needed: <https://forms.gle/v1fMc8YboFvERz8j6>
 - [ ] Post blog (optional, keyboard prize)
 
+## Improvement loops (done Sept 20)
+
+- ✅ Loop 1 requester lifecycle: my_requests endpoint/UI, dedupe guard 409, is_donor-preserve fix
+- ✅ Loop 2 ops: throttling, alarms, ops dashboard, optional budget, 429 UX
+- ✅ Loop 3 integrity: respond idempotency, fulfill→confirmed SMS, expire cascade, seed history, donor education
+- ✅ Loop 4 AI: my_requests tool, conflict surfacing, quick chips
+- ✅ Loop 5 UX: tel inputs, aria-live, reduced motion, empty states
+- ✅ Loop 6 tests: fake-table domain tests (33 checks) + docs sync
+
 ## Ideas if time (prize multipliers)
 
-- 🟡 Add a WhatsApp-style share sheet so requesters can post the live request link
-- 🟡 CloudWatch dashboard + screenshot in video (shows ops maturity)
 - 🟡 Hindi toggle (Bedrock translation) — hits "Agents and AI" harder
-- 🟡 DDB `on-demand` → mention in writeup as deliberate cost decision
+- 🟡 WhatsApp deep-link share → already shipped in My requests (Share button)
+- 🟡 CloudWatch dashboard screenshot in video (already live: `rakta-live`)
+- 🟡 Optional `EnableCostGuard` param → enabled for long-running deployments
