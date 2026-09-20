@@ -17,7 +17,7 @@ Everything runs inside the AWS Free Tier from a single SAM template:
 - **DynamoDB** on-demand, with the matching hot path as one GSI query (`blood_type` primary, `city#` sort prefix)
 - **SNS SMS** for alerts (SenderID `RAKTA`)
 - **EventBridge** to sweep stale requests + **DynamoDB TTL** for cleanup
-- **S3 + CloudFront** (OAC, private bucket) for the no-build frontend
+- **S3 static website hosting** for the no-build frontend
 - **Amazon Bedrock Nova** assistant with tool use — it can even post a request from chat
 
 ## What fought back

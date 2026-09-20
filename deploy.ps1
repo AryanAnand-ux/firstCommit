@@ -64,7 +64,7 @@ Set-Content -Path "$root\frontend\config.js" -Value $tpl -Encoding UTF8
 Step "Uploading frontend to S3 (bucket: $($map['FrontendBucket']))..."
 Invoke-NativeStream { aws s3 sync "$root\frontend" "s3://$($map['FrontendBucket'])" --exclude "config.template.js" --region $Region } "s3 sync failed"
 
-Step "Invalidating CloudFront cache so new frontend goes live immediately..."
+Step "Invalidating CloudFront cache if a distribution is configured..."
 $cfId = $map["CloudFrontDistributionId"]
 if ($cfId -and $cfId -ne "none") {
   $invalidation = Invoke-NativeCapture { aws cloudfront create-invalidation --distribution-id $cfId --paths "/*" --region $Region }

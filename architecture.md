@@ -2,11 +2,11 @@
 
 ## 1. System overview
 
-Everything is **serverless**, defined in a single SAM template (`template.yaml`), and runs inside the **AWS Free Tier** (Pay-per-request DynamoDB, Lambda, API Gateway, SNS, S3, CloudFront, Cognito, Bedrock).
+Everything is **serverless**, defined in a single SAM template (`template.yaml`), and runs inside the **AWS Free Tier** (Pay-per-request DynamoDB, Lambda, API Gateway, SNS, S3, Cognito, Bedrock).
 
 ```mermaid
 flowchart LR
-    U[Browser SPA<br/>S3 + CloudFront] -->|REST /prod| G[Amazon API Gateway]
+    U[Browser SPA<br/>S3 website] -->|REST /prod| G[Amazon API Gateway]
     G -->|Authorizer| C[Cognito User Pool]
     G -->|POST /requests| CR[createRequest Lambda]
     G -->|GET /requests| LR[listRequests Lambda]
@@ -101,7 +101,7 @@ GSI: `DonorIndex` (PK donor_id), `RequestIndex` (PK request_id)
 ## 5. Security
 
 - All APIs except `GET /stats` are behind the **Cognito authorizer** (JWT verified by API Gateway).
-- Frontend served via S3 + **CloudFront OAC** (no public S3 buckets).
+- Frontend served via S3 static website hosting; authenticated app data still flows through Cognito-protected API Gateway endpoints.
 - CORS locked to the required headers; no secrets in client code (authenticate via Cognito, only tokens).
 - SMS SenderID fixed (`RAKTA`); phone fields validated server-side.
 - IAM: least-privilege — per-table `DynamoDBCrudPolicy`, `sns:Publish`, `bedrock:InvokeModel`, CloudWatch logs only.
@@ -114,7 +114,7 @@ GSI: `DonorIndex` (PK donor_id), `RequestIndex` (PK request_id)
 | DynamoDB | PAY_PER_REQUEST, tiny workload → pennies |
 | API Gateway | ~1M requests → $0 (1M free/mo) |
 | SNS SMS | <100 msgs → free tier |
-| S3 + CloudFront | pennies |
+| S3 website hosting | pennies |
 | Cognito | 50k MAU free → $0 |
 | Bedrock Nova | ~100k tokens → pennies |
 

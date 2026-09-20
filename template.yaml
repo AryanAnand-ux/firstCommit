@@ -440,7 +440,7 @@ Resources:
             Description: Expire stale open requests and notify requesters
 
   # ------------------------------------------------------------------
-  # Frontend - S3 + CloudFront
+  # Frontend - S3 static website hosting
   # ------------------------------------------------------------------
   FrontendBucket:
     Type: AWS::S3::Bucket
@@ -530,7 +530,6 @@ Resources:
           Service:
             - Amazon API Gateway
             - Amazon Bedrock
-            - Amazon CloudFront
             - Amazon Cognito
             - Amazon DynamoDB
             - AWS Lambda
@@ -569,7 +568,7 @@ Outputs:
     Description: Cognito user pool client id (used by frontend config)
     Value: !Ref UserPoolClient
   CloudFrontDistributionId:
-    Description: CloudFront distribution id (used for cache invalidation)
+    Description: Optional CloudFront distribution id (none for S3 website hosting)
     Value: none
   OpsDashboard:
     Description: CloudWatch dashboard name for live ops monitoring

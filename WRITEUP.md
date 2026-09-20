@@ -26,7 +26,7 @@ RaktaSetu solves a very specific, very Indian emergency: finding a matching bloo
 
 A single SAM template deploys the whole free-tier stack:
 
-- **Frontend:** static SPA on S3 + CloudFront (Origin Access Control; no public bucket).
+- **Frontend:** static SPA on S3 static website hosting.
 - **API:** API Gateway REST, protected by a **Cognito** authorizer (only /stats is public).
 - **Compute:** 9 **Lambda** functions (Python 3.12).
 - **Data:** **DynamoDB** on-demand — four tables; the matching hot path is a single GSI query (`blood_type` partition + `city#` sort prefix). TTL handles expiry (24h urgent / 72h planned).

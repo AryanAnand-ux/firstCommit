@@ -4,7 +4,7 @@
 
 RaktaSetu matches **verified, eligible donors in the same city** to urgent blood/platelet requests in **seconds** — not the classic midnight WhatsApp chain. Matching donors get an **SMS + in-app alert** instantly; the requester is notified the moment a donor confirms. An **AI assistant** (Amazon Bedrock · Nova) answers donor-eligibility questions and can even **post a request from chat**.
 
-The live URL is printed by the deploy script (frontend hosted on S3 + CloudFront).
+The live URL is printed by the deploy script (frontend hosted as an S3 static website).
 
 ## The problem
 
@@ -22,7 +22,7 @@ A fully serverless, one-command-deploy application running entirely inside the *
 
 | Layer | Services |
 |---|---|
-| Frontend | **S3 + CloudFront** (static SPA, no build step), private bucket via Origin Access Control |
+| Frontend | **S3 static website hosting** (static SPA, no build step) |
 | API | **API Gateway** REST, Cognito-authorised (only `/stats` is public) |
 | Compute | 9 **Lambda** functions (Python 3.12) |
 | Data | **DynamoDB** (on-demand / PAY_PER_REQUEST): users, donors, requests, matches — with GSIs powering the hot matching + expiry queries |
@@ -35,7 +35,7 @@ A fully serverless, one-command-deploy application running entirely inside the *
 
 ```mermaid
 flowchart LR
-    U[Browser SPA<br/>S3 + CloudFront] -->|REST /prod| G[Amazon API Gateway]
+    U[Browser SPA<br/>S3 website] -->|REST /prod| G[Amazon API Gateway]
     G -->|Authorizer| C[Cognito User Pool]
     G -->|POST /requests| CR[createRequest]
     G -->|GET /requests| LR[listRequests]
@@ -127,13 +127,13 @@ Re-push frontend edits only:
 ## Security
 
 - Every endpoint except `GET /stats` sits behind the **Cognito JWT authorizer** (verified by API Gateway).
-- The S3 bucket is **private**; served only through CloudFront **Origin Access Control** with a source-ARN-conditioned bucket policy.
+- The frontend is served from S3 static website hosting; API writes remain protected behind Cognito-authenticated endpoints.
 - IAM is least-privilege: per-table `DynamoDBCrudPolicy`, `sns:Publish`, `bedrock:InvokeModel`, CloudWatch logs.
 - Phone numbers stored in E.164, validated server-side, exposed only inside the matched flow.
 
 ## Cost posture (Free Tier, full weekend)
 
-Everything runs on-demand: **~$0 for the hackathon.** Lambda 1M req/mo free, API Gateway 1M free, DynamoDB on-demand pennies, SNS SMS within 100/mo free, Cognito 50k MAU free, Bedrock Nova pennies, S3/CloudFront pennies. Full table in `architecture.md`.
+Everything runs on-demand: **~$0 for the hackathon.** Lambda 1M req/mo free, API Gateway 1M free, DynamoDB on-demand pennies, SNS SMS within 100/mo free, Cognito 50k MAU free, Bedrock Nova pennies, S3 pennies. Full table in `architecture.md`.
 
 ## What we learned
 

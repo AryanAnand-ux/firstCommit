@@ -11,7 +11,7 @@ Record at 1440x900 (or phone landscape), browser light mode, mic on a decent hea
 | 0:50–1:15 | Post a request | Requests page, fill the form, submit | "I need B+ plasma in Pune for a surgery. Type, city, hospital, urgency, contact. Thirty seconds." |
 | 1:15–1:45 | Match + alert | Toast "2 donors alerted" + donor's SMS notification on phone | "RaktaSetu matched eligible, available B+ donors in Pune and SMS-alerted them — with a direct line back to me. No one waits for morning." |
 | 1:45–2:15 | The AI assistant | Assistant tab, ask "Can I donate if I got a tattoo 3 months ago?" then "Actually, create an emergency request for O+ in Nagpur" | "The same app has an assistant powered by Amazon Bedrock. It answers eligibility questions — and it can raise the request itself from plain chat." |
-| 2:15–2:50 | Architecture + ops | Architecture slide (mermaid) + CloudWatch/console pan | "Under the hood: API Gateway, nine Lambdas, DynamoDB with GT-tuned GSIs, SNS SMS, EventBridge sweeper, Cognito auth, CloudFront edge. Everything on the Free Tier — this weekend cost about zero." |
+| 2:15–2:50 | Architecture + ops | Architecture slide (mermaid) + CloudWatch/console pan | "Under the hood: API Gateway, nine Lambdas, DynamoDB with GT-tuned GSIs, SNS SMS, EventBridge sweeper, Cognito auth, and S3 static hosting. Everything on the Free Tier — this weekend cost about zero." |
 | 2:50–3:00 | Close | Donor profile page + CTA card | "One unit can be helped by knowing who's nearby. Post the need, or be the donor. rakta... (URL) — join the network." |
 
 ## Rules compliance must-haves
