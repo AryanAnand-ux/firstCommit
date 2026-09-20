@@ -1,5 +1,5 @@
 import uuid
-from shared.api import ok, bad_request, not_found, forbidden, identity
+from shared.api import ok, bad_request, not_found, forbidden, conflict, identity
 from shared import db, notify
 from shared.validate import parse_body
 from shared.db import now_iso
@@ -25,6 +25,8 @@ def lambda_handler(event, context):
         return not_found("Request not found")
     if item.get("requester_id") != requester["sub"]:
         return forbidden("Only the requester can update this request")
+    if item.get("status") != "open":
+        return conflict(f"This request is already {item.get('status')}.")
 
     new_status = "fulfilled" if action == "fulfill" else "cancelled"
     table.update_item(

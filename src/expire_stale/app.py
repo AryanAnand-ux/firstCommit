@@ -47,7 +47,7 @@ def lambda_handler(event, context):
         updated += 1
 
     print(f"expired={updated} total_checked={len(stale)}")
-    return {"statusCode": 200, "body": "\\n".join([f"expired={updated}", f"checked={len(stale)}"])}
+    return {"statusCode": 200, "body": "\n".join([f"expired={updated}", f"checked={len(stale)}"])}
 
 
 def _close_pending_matches(request_item):

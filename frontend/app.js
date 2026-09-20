@@ -14,19 +14,43 @@ function esc(v) {
 
 const BLOOD = ["A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-"];
 
+const ICON_DROP =
+  '<svg viewBox="0 0 64 64" fill="none" aria-hidden="true"><path d="M38 6c10 14 18 23 18 37a20 20 0 1 1-40 0c0-14 8-23 18-37Z" fill="currentColor" fill-opacity=".92"/><path d="M32 20c3.4 6 6.7 10 6.7 15a6.7 6.7 0 1 1-13.4 0c0-5 3.3-9 6.7-15Z" fill="var(--paper-2)"/></svg>';
+
+const ICON_PHONE =
+  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6A19.79 19.79 0 0 1 2.08 4.18 2 2 0 0 1 4.06 2h3a2 2 0 0 1 2 1.72c.13.96.36 1.9.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.91.34 1.85.57 2.81.7A2 2 0 0 1 22 16.92z"/></svg>';
+
+const ICON_PLUS =
+  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>';
+
+function dropState(title, subtitle) {
+  return `<div class="empty"><div class="icon">${ICON_DROP}</div>${esc(title)}${subtitle ? `<p>${subtitle}</p>` : ""}</div>`;
+}
+
+function telPill(phone) {
+  const safe = phone || "";
+  return `<span class="tel-pill">${ICON_PHONE}${esc(safe) || "No phone on file"}</span>`;
+}
+
+function waLink(phone, text) {
+  const digits = String(phone || "").replace(/[^0-9]/g, "");
+  if (!digits) return "";
+  return `<a class="btn sec" style="margin-left:auto;margin-right:8px" target="_blank" rel="noopener" href="https://wa.me/${digits}?text=${encodeURIComponent(text)}">WhatsApp</a>`;
+}
+
 function toast(msg, isErr) {
   const t = $("#toast");
   t.textContent = msg;
   t.classList.toggle("err", !!isErr);
   t.classList.add("show");
   clearTimeout(t._h);
-  t._h = setTimeout(() => t.classList.remove("show"), 3200);
+  t._h = setTimeout(() => t.classList.remove("show"), 3400);
 }
 
 /* ---------------- config guard ---------------- */
 if (!cfg) {
   document.getElementById("app").innerHTML =
-    '<div class="empty"><div class="big">! </div><p><b>config.js missing.</b><br>Run <code>deploy.ps1</code> to generate config.js from the stack outputs.</p></div>';
+    '<div class="empty"><div class="icon">' + ICON_DROP + '</div>config.js missing.<p>Run <code>deploy.ps1</code> to generate config.js from the stack outputs.</p></div>';
 }
 
 /* ---------------- auth (Cognito) ---------------- */
@@ -86,7 +110,7 @@ const Auth = {
     route();
   },
 
-setEmail(e) {
+  setEmail(e) {
     this.email = e;
     localStorage.setItem("rakta_user", e);
     updateAuthUI();
@@ -129,7 +153,7 @@ function updateAuthUI() {
     btn.className = "auth-pill";
     chip.textContent = "";
   }
-  $$(".nav button").forEach((b) => b.classList.toggle("active", b.dataset.nav === location.hash));
+  $$(".nav button").forEach((b) => b.classList.toggle("active", b.dataset.nav === (currentRoute || "#/")));
 }
 
 $("body").addEventListener("click", (e) => {
@@ -163,6 +187,19 @@ async function requireAuth() {
   catch (e) { toast("Please sign in first"); location.hash = "#/auth"; return false; }
 }
 
+/* ---------------- sign-in prompt ---------------- */
+function signInCard(title, sub) {
+  return `
+  <div class="signin-card">
+    ${ICON_DROP}
+    <div>
+      <h3>${esc(title || "Sign in to see live requests")}</h3>
+      <p>${esc(sub || "Public stats & blood-need matrix are open to everyone above. In-depth feeds are for signed-in users.")}</p>
+    </div>
+    <a class="btn" href="#/auth">Sign in</a>
+  </div>`;
+}
+
 /* ---------------- render helpers ---------------- */
 function requesterCard(r) {
   const badgeCls = ["fulfilled", "cancelled", "expired"].includes(r.status) ? r.status : (r.urgency === "urgent" ? "urgent" : "planned");
@@ -178,8 +215,8 @@ function requesterCard(r) {
     <div class="meta">${esc(r.city)} · by ${esc(r.requester_name)} · ends ${esc((r.expires_at || "").replace("T", " "))}</div>
     ${r.note ? `<p class="muted" style="margin-top:8px">${esc(r.note)}</p>` : ""}
     <div class="row">
-      <span class="muted">📞 ${esc(r.requester_phone)}</span>
-      <a class="btn sec" style="margin-left:auto;padding:8px 14px;margin-right:8px" target="_blank" href="https://wa.me/${esc(r.requester_phone.replace(/[^0-9]/g, ""))}?text=${encodeURIComponent("Hi, I can help with your blood request for " + r.blood_type + " in " + r.city + ".")}">WhatsApp</a>
+      ${telPill(r.requester_phone)}
+      ${waLink(r.requester_phone, "Hi, I can help with your blood request for " + r.blood_type + " in " + r.city + ".")}
     </div>
   </div>`;
 }
@@ -190,26 +227,46 @@ const Views = {
     const app = $("#app");
     app.innerHTML = `
       <section class="hero">
-        <span class="eyebrow">Live now · India</span>
-        <h1>The right donor, minutes away — <span class="accent">not a WhatsApp chain</span>.</h1>
-        <p>RaktaSetu matches verified, eligible donors in your city to urgent blood &amp; platelet requests — and alerts them by SMS in seconds.</p>
+        <span class="eyebrow"><span class="live-dot"></span> Live across India · response in minutes</span>
+        <h1>The right donor — <span class="accent">a bridge away</span>, not a WhatsApp chain.</h1>
+        <p class="lede">RaktaSetu pairs verified, eligible donors in your city with urgent blood &amp; platelet requests, and alerts them by SMS in seconds.</p>
         <div class="hero-cta">
-          <button class="btn" data-goto="#/requests">Need blood now</button>
+          <button class="btn" data-goto="#/requests">${ICON_PLUS}Need blood now</button>
           <button class="btn sec" data-goto="#/donor">Become a donor</button>
           <button class="btn sec" data-goto="#/assistant">Ask the assistant</button>
         </div>
+        <p class="hero-note">Free for hospitals, patients and donors. Built for First Commit 2026.</p>
       </section>
+
       <div class="stats" id="statRow"><div class="empty">Loading live stats…</div></div>
-      <h2 class="sec-title">How it works</h2>
-      <p class="sec-sub">Three steps, one emergency.</p>
-      <div class="steps">
-        <div class="step"><span class="k">1</span><h4>Post a request</h4><p>Blood type, city, hospital, urgency. Takes 30 seconds.</p></div>
-        <div class="step"><span class="k">2</span><h4>We match &amp; alert</h4><p>Eligible donors of your type in your city get an SMS + in-app alert instantly.</p></div>
-        <div class="step"><span class="k">3</span><h4>Donor confirms</h4><p>You get their contact the moment they confirm. Track everything.</p></div>
-      </div>
-      <h2 class="sec-title">Open requests</h2>
-      <p class="sec-sub">Live needs across India.</p>
-      <div id="homeRequests"><div class="empty">Loading…</div></div>
+
+      <section class="card gap-card" aria-labelledby="gapTitle">
+        <div class="gap-head">
+          <h2 class="sec-title" id="gapTitle" style="font-size:23px">Where help is needed</h2>
+          <div class="gap-legend">
+            <span><i class="legend-don"></i>Donors</span>
+            <span><i class="legend-need"></i>Open needs</span>
+          </div>
+        </div>
+        <p>Live supply vs demand across the eight major blood groups. Demand outruns supply in most cities — every registered donor counts.</p>
+        <div id="gapMatrix"><div class="empty">Loading blood-need matrix…</div></div>
+      </section>
+
+      <section class="section-gap">
+        <h2 class="sec-title">How it works</h2>
+        <p class="sec-sub">Three steps, one emergency — no group chats required.</p>
+        <div class="steps">
+          <div class="step"><span class="k">1</span><h4>Post a request</h4><p>Blood type, city, hospital, urgency. Takes 30 seconds.</p></div>
+          <div class="step"><span class="k">2</span><h4>We match &amp; alert</h4><p>Eligible donors of your type in your city get an SMS plus an in-app alert instantly.</p></div>
+          <div class="step"><span class="k">3</span><h4>Donor confirms</h4><p>You get their contact the moment they confirm, and track everything from one place.</p></div>
+        </div>
+      </section>
+
+      <section class="section-gap">
+        <h2 class="sec-title">Live requests</h2>
+        <p class="sec-sub">Open needs across India, newest first.</p>
+        <div id="homeRequests"><div class="empty">Loading…</div></div>
+      </section>
     `;
     loadStats();
     loadHomeRequests();
@@ -299,7 +356,7 @@ const Views = {
           <input id="dlast" type="date" />
         </div>
         <div class="field" style="justify-content:flex-end">
-          <label class="toggle"><input id="davail" type="checkbox" checked /> Available to donate now</label>
+          <label class="toggle"><input id="davail" type="checkbox" checked /><span class="track"></span> Available to donate now</label>
         </div>
         <div class="field full">
           <button class="btn block" id="dbtn" data-label="Save profile">Save profile</button>
@@ -309,7 +366,7 @@ const Views = {
       <div class="card facts">
         <h3>Know before you donate</h3>
         <ul class="clean">
-          <li><strong>Eligibility:</strong> you must be 18–65, weigh at least 45&nbsp;kg, and be in good health on the day.</li>
+          <li><strong>Eligibility:</strong> you must be 18–65, weigh at least 50&nbsp;kg, and be in good health on the day.</li>
           <li><strong>Intervals:</strong> wait 3 months between whole-blood donations in India; platelets can be given more often (2–4 weeks) after medical clearance.</li>
           <li><strong>Not eligible today:</strong> fever, active cold/flu, on antibiotics, low haemoglobin, recent tattoo/piercing (last 6 months), or pregnant.</li>
           <li><strong>Before:</strong> hydrate well, eat a light meal 2–3 hours prior, avoid alcohol 24h before, sleep 8 hours.</li>
@@ -338,7 +395,7 @@ const Views = {
       <h1 class="sec-title" style="margin-top:8px">Assistant</h1>
       <p class="sec-sub">Ask about donating, or just tell it: <em>“I need B+ plasma in Nagpur”</em>.</p>
       <div class="chat" id="chatBox" aria-live="polite"></div>
-      <div class="chips" id="assistantChips">
+      <div class="chips assistant-chips" id="assistantChips">
         <button class="chip" type="button">Can I donate?</button>
         <button class="chip" type="button">I need B+ in Nagpur</button>
         <button class="chip" type="button">What are my requests?</button>
@@ -396,7 +453,7 @@ function authTab(tab) {
       <form data-action="signUp" class="card form-grid">
         <div class="field full"><label>Email</label><input id="aemail" type="email" required autocomplete="email" /></div>
         <div class="field full"><label>Password (8+, upper, lower, number)</label><input id="apass" type="password" required autocomplete="new-password" /></div>
-        <div class="field full"><label class="toggle"><input id="aisDonor" type="checkbox" checked /> I want to donate blood</label></div>
+        <div class="field full"><label class="toggle"><input id="aisDonor" type="checkbox" checked /><span class="track"></span> I want to donate blood</label></div>
         <div class="field full"><button class="btn block" id="aBtn" data-label="Create account">Create account</button></div>
       </form>`;
   } else if (tab === "confirm") {
@@ -410,31 +467,87 @@ function authTab(tab) {
 }
 
 /* ---------------- data loading ---------------- */
+function countUp(el, target, dur = 900) {
+  if (!el) return;
+  const reduced = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  if (reduced) { el.textContent = target; return; }
+  const start = performance.now();
+  const step = (now) => {
+    const t = Math.min(1, (now - start) / dur);
+    const eased = 1 - Math.pow(1 - t, 3);
+    el.textContent = Math.round(target * eased);
+    if (t < 1) requestAnimationFrame(step);
+  };
+  requestAnimationFrame(step);
+}
+
 async function loadStats() {
   const row = $("#statRow");
   if (!row || !cfg) return;
   try {
     const s = await api("/stats");
-    row.innerHTML = `
-      <div class="stat"><div class="num">${esc(s.requests.open)}</div><div class="lbl"><span class="live-dot"></span> Open</div></div>
-      <div class="stat"><div class="num">${esc(s.requests.total)}</div><div class="lbl">Total posted</div></div>
-      <div class="stat"><div class="num">${esc(s.requests.fulfilled)}</div><div class="lbl">Fulfilled</div></div>
-      <div class="stat"><div class="num">${esc(s.donors_total)}</div><div class="lbl">Donors ready</div></div>`;
+    const stats = [
+      { v: s.requests.open, lbl: "Open needs", live: true },
+      { v: s.requests.total, lbl: "Total posted" },
+      { v: s.requests.fulfilled, lbl: "Fulfilled" },
+      { v: s.donors_total, lbl: "Donors ready" },
+    ];
+    row.innerHTML = stats.map((st) =>
+      `<div class="stat"><div class="num" data-count="${esc(st.v)}">0</div><div class="lbl">${st.live ? '<span class="live-dot"></span>' : ""}${esc(st.lbl)}</div></div>`
+    ).join("");
+    $$("#statRow .num").forEach((el) => countUp(el, parseInt(el.dataset.count, 10) || 0));
+    renderGapMatrix(s);
   } catch (e) {
-    row.innerHTML = '<div class="empty">Stats unavailable. Deploy to see live numbers.</div>';
+    row.innerHTML = '<div class="empty">Stats unavailable — deploy to see live numbers.</div>';
+    const gm = $("#gapMatrix");
+    if (gm) gm.innerHTML = dropState("Blood-need matrix unavailable", "It appears once the backend is deployed.");
   }
+}
+
+function gapState(don, need) {
+  if (don === 0 && need === 0) return { label: "No data", cls: "full" };
+  if (need === 0) return { label: "Donors ready", cls: "ok" };
+  if (don === 0) return { label: "Needs donors", cls: "needy" };
+  if (don >= need) return { label: "Covered", cls: "ok" };
+  return { label: "Needs donors", cls: "needy" };
+}
+
+function renderGapMatrix(s) {
+  const el = $("#gapMatrix");
+  if (!el) return;
+  const don = s.donors_by_blood_type || {};
+  const need = s.requests_open_by_blood_type || {};
+  const donMax = Math.max(1, ...Object.values(don));
+  const needMax = Math.max(1, ...Object.values(need));
+  const rows = BLOOD.map((bt, i) => {
+    const d = don[bt] || 0;
+    const n = need[bt] || 0;
+    const st = gapState(d, n);
+    return `
+    <div class="gap-row" style="animation-delay:${(i * 0.03).toFixed(2)}s">
+      <span class="gap-type">${bt}</span>
+      <div><div class="gap-bar"><div class="fill don" style="width:${d ? Math.max(3, (d / donMax) * 100) : 0}%"></div></div><div class="gap-label">${d} donor${d === 1 ? "" : "s"}</div></div>
+      <div><div class="gap-bar"><div class="fill need" style="width:${n ? Math.max(3, (n / needMax) * 100) : 0}%"></div></div><div class="gap-label">${n} open need${n === 1 ? "" : "s"}</div></div>
+      <span class="gap-state ${st.cls}">${st.label}</span>
+    </div>`;
+  }).join("");
+  el.innerHTML = rows;
 }
 
 async function loadHomeRequests() {
   const el = $("#homeRequests");
   if (!el) return;
+  if (!Auth.email) {
+    el.innerHTML = signInCard();
+    return;
+  }
   try {
     const d = await api("/requests?status=open&limit=6");
     el.innerHTML = d.requests.length
-      ? d.requests.map(requesterCard).join("")
-      : '<div class="empty"><p>No open requests right now. Be the first.</p></div>';
+      ? `<div class="feed-grid">${d.requests.map(requesterCard).join("")}</div>`
+      : dropState("No open requests right now", "Be the first to post one — it takes 30 seconds.");
   } catch (e) {
-    el.innerHTML = '<div class="empty">Could not load requests.</div>';
+    el.innerHTML = dropState("Could not load requests", esc(e.message));
   }
 }
 
@@ -459,22 +572,21 @@ async function loadMyRequests() {
   if (!el) return;
   if (!Auth.email) {
     title.textContent = "";
-    el.innerHTML =
-      '<div class="empty"><p><a href="#/auth">Sign in</a> to post and track your own requests.</p></div>';
+    el.innerHTML = dropState("Sign in to manage your requests", '<a href="#/auth">Sign in</a> to post and track your own requests.');
     return;
   }
   try {
     const d = await api("/requests/mine");
     title.textContent = "My requests";
     el.innerHTML = d.requests.length
-      ? d.requests.map((r) => myRequestCard(r)).join("")
-      : '<div class="empty"><p>You have not posted any requests yet. Need blood in your city? Post one above.</p></div>';
+      ? `<div class="feed-grid">${d.requests.map((r) => myRequestCard(r)).join("")}</div>`
+      : dropState("You have not posted any requests yet", "Need blood in your city? Post one above.");
     $$("#myReqList [data-update]").forEach((b) =>
       b.addEventListener("click", () => updateMyRequest(b.dataset.id, b.dataset.update, b))
     );
   } catch (e) {
     title.textContent = "";
-    el.innerHTML = '<div class="empty">' + esc(e.message) + "</div>";
+    el.innerHTML = dropState("Could not load your requests", esc(e.message));
   }
 }
 
@@ -491,10 +603,10 @@ function myRequestCard(r) {
     <div class="meta">${esc(r.hospital || r.city)} · ${esc(r.city)} · ${esc(r.units)} unit(s)</div>
     ${r.note ? `<p class="muted" style="margin-top:6px">${esc(r.note)}</p>` : ""}
     ${canAct ? `<div class="row"><span class="muted">Donors are being alerted. Keep this live until someone confirms.</span>
-      <span style="margin-left:auto;display:flex;gap:8px">
-        <a class="btn sec" style="padding:8px 14px" target="_blank" href="https://wa.me/?text=${encodeURIComponent("Need " + r.blood_type + " in " + r.city + ". Help spread the word — " + location.origin + location.pathname + "#/requests")}">Share</a>
-        <button class="btn ok" data-update="fulfill" data-id="${esc(r.request_id)}" data-label="Mark fulfilled">Mark fulfilled</button>
-        <button class="btn sec" data-update="cancel" data-id="${esc(r.request_id)}" data-label="Cancel request">Cancel</button>
+      <span style="margin-left:auto;display:flex;gap:8px;flex-wrap:wrap">
+        <a class="btn sec btn-badge" target="_blank" rel="noopener" href="https://wa.me/?text=${encodeURIComponent("Need " + r.blood_type + " in " + r.city + ". Help spread the word — " + location.origin + location.pathname + "#/requests")}">Share</a>
+        <button class="btn ok btn-badge" data-update="fulfill" data-id="${esc(r.request_id)}" data-label="Mark fulfilled">Mark fulfilled</button>
+        <button class="btn sec btn-badge" data-update="cancel" data-id="${esc(r.request_id)}" data-label="Cancel request">Cancel</button>
       </span></div>` : ""}
   </div>`;
 }
@@ -513,14 +625,20 @@ async function updateMyRequest(id, action, btn) {
 
 async function loadRequests(status) {
   const el = $("#reqList");
+  if (!el || !cfg) return;
+  if (!Auth.email) {
+    el.innerHTML = signInCard("Sign in to browse live needs", "Posting, matching and donor alerts require a free account. The blood-need matrix on the home page is public.");
+    if ($("#reqChips")) $("#reqChips").innerHTML = "";
+    return;
+  }
   el.innerHTML = '<div class="empty">Loading…</div>';
   try {
     const d = await api("/requests?status=" + status + "&limit=50");
     el.innerHTML = d.requests.length
-      ? d.requests.map(requesterCard).join("")
-      : '<div class="empty"><p>Nothing here.</p></div>';
+      ? `<div class="feed-grid">${d.requests.map(requesterCard).join("")}</div>`
+      : dropState("Nothing here", 'Try another tab above, or <a href="#/requests">post a request</a>.');
   } catch (e) {
-    el.innerHTML = '<div class="empty">Could not load. ' + esc(e.message) + "</div>";
+    el.innerHTML = dropState("Could not load requests", esc(e.message));
   }
 }
 
@@ -545,7 +663,7 @@ async function loadAlerts() {
   try {
     const d = await api("/matches/me");
     el.innerHTML = d.matches.length
-      ? d.matches.map((m) => {
+      ? `<div class="feed-grid">${d.matches.map((m) => {
           const pending = m.status === "sent";
           return `
           <div class="card ${m.urgency === "urgent" ? "urgent" : "planned"}">
@@ -557,18 +675,17 @@ async function loadAlerts() {
             <h3>${esc(m.request_hospital || m.request_city)}</h3>
             <div class="meta">${esc(m.request_city)} · ${esc(m.request_note || "")} · asked by ${esc(m.requester_name)}</div>
             <div class="row">
-              <span class="muted">📞 ${esc(m.requester_phone)}</span>
+              ${telPill(m.requester_phone)}
               ${pending
                 ? `<span style="margin-left:auto;display:flex;gap:8px">
-                     <button class="btn ok" data-confirm="${esc(m.match_id)}" data-label="Confirm">Confirm</button>
-                     <button class="btn sec" data-decline="${esc(m.match_id)}" data-label="Decline">Decline</button>
+                     <button class="btn ok btn-badge" data-confirm="${esc(m.match_id)}" data-label="Confirm">Confirm</button>
+                     <button class="btn sec btn-badge" data-decline="${esc(m.match_id)}" data-label="Decline">Decline</button>
                    </span>`
                 : ""}
             </div>
           </div>`;
-        }).join("")
-      : '<div class="empty"><p>No alert yet. Register as a donor and you\'ll be matched when someone in your city needs your blood type.</p></div>';
-
+        }).join("")}</div>`
+      : dropState("No alerts yet", "Register as a donor and you'll be matched when someone in your city needs your blood type.");
     $$("#alertList [data-confirm]").forEach((b) =>
       b.addEventListener("click", () => respondAlert(b.dataset.confirm, "confirm", b))
     );
@@ -576,7 +693,7 @@ async function loadAlerts() {
       b.addEventListener("click", () => respondAlert(b.dataset.decline, "decline", b))
     );
   } catch (e) {
-    el.innerHTML = '<div class="empty">Could not load alerts: ' + esc(e.message) + "</div>";
+    el.innerHTML = dropState("Could not load alerts", esc(e.message));
   }
 }
 
@@ -612,7 +729,6 @@ ACTIONS.createRequest = async (form) => {
     urgency: $("#curgency").value,
     phone: $("#cphone").value.trim(),
     note: $("#cnote").value.trim(),
-    name: Auth.email.split("@")[0],
   };
   const btn = $("#cbtn");
   busy(btn, true);
@@ -727,13 +843,18 @@ document.body.addEventListener("click", (e) => {
   if (g) location.hash = g.dataset.goto;
 });
 
+const ROUTES = { "#/": "home", "#/requests": "requests", "#/donor": "donor", "#/alerts": "alerts", "#/assistant": "assistant", "#/auth": "auth" };
+let currentRoute = "#/";
+
 function route() {
   const h = location.hash || "#/";
   if (!cfg && h !== "#/") { location.hash = "#/"; return; }
-  const view = (Views[h.split("?")[0]] ? h.split("?")[0] : "#/");
+  const key = h.split("?")[0] || "#/";
+  const view = ROUTES[key] || "home";
+  currentRoute = key;
   Views[view]();
   updateAuthUI();
-  $$(".nav button").forEach((b) => b.classList.toggle("active", b.dataset.nav === view));
+  window.scrollTo(0, 0);
 }
 
 window.addEventListener("hashchange", route);

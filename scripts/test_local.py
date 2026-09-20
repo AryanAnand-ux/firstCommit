@@ -6,7 +6,7 @@ import sys
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "src", "layer", "python")))
 
-from shared.validate import clean_phone, normalize_city, validate_blood_type, validate_urgency, ensure_units, parse_body  # noqa: E402
+from shared.validate import clean_phone, normalize_city, validate_blood_type, validate_urgency, ensure_units, parse_bool, parse_body  # noqa: E402
 
 FAIL = []
 
@@ -49,6 +49,15 @@ eq("json body", parse_body({"body": '{"a":1}'}), {"a": 1})
 eq("missing", parse_body({}), {})
 eq("garbage", parse_body({"body": "nope"}), {})
 
+print("parse_bool")
+eq("bool passthrough", parse_bool(True), True)
+eq("false string", parse_bool("false"), False)
+eq("true string", parse_bool("true"), True)
+eq("1 string", parse_bool("1"), True)
+eq("empty default", parse_bool(""), False)
+eq("none default", parse_bool(None), False)
+eq("custom default", parse_bool(None, True), True)
+
 print("domain layer")
 import shared.domain as dom  # noqa: E402
 
@@ -83,7 +92,7 @@ class FakeTable:
         if idx == "DonorMatchIndex":
             city_key = vals.get(":ck", "#")
             out = [i for i in items if i.get("blood_type") == vals.get(":bt") and str(i.get("match_key", "")).startswith(city_key)]
-            out = [i for i in out if i.get("donation_eligible") == vals.get(":t") and i.get("available") == vals.get(":t")]
+            out = [i for i in out if i.get("available") == vals.get(":t")]
             return {"Items": out[: kw.get("Limit", 100)]}
         if idx == "RequestIndex":
             return {"Items": [i for i in items if i.get("request_id") == vals.get(":r")]}
@@ -165,6 +174,25 @@ for did, blood, city, eligible, available in [
 item, meta = one_request(env)
 eq("only eligible+available matched", meta["matched"], 1)
 eq("matched donor is d1", env.donor_msgs, ["d1"])
+
+print("donation_eligible")
+eq("no date -> eligible", dom.donation_eligible(""), True)
+eq("recent donation -> not eligible", dom.donation_eligible("2026-09-01T00:00:00Z"), False)
+eq("old donation -> eligible", dom.donation_eligible("2026-01-01T00:00:00Z"), True)
+eq("garbage -> eligible", dom.donation_eligible("yesterday"), True)
+
+env = new_env()
+for did, last in [
+    ("e1", "2026-09-01T00:00:00Z"),
+    ("e2", "2026-01-01T00:00:00Z"),
+]:
+    env.table("DONORS_TABLE").store[did] = {
+        "donor_id": did, "name": "E", "phone": "+919800000001", "blood_type": "O+", "city": "pune",
+        "donation_eligible": True, "available": True, "last_donation": last, "match_key": f"pune#{did}",
+    }
+item, meta = one_request(env)
+eq("recent donor skipped by live cooldown", env.donor_msgs, ["e2"])
+eq("cooldown matched 1", meta["matched"], 1)
 
 print()
 

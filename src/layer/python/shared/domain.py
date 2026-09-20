@@ -12,6 +12,18 @@ def _iso(dt):
     return dt.strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
+def donation_eligible(last_donation):
+    """Live eligibility from the last donation date (3-month gap). No date = eligible."""
+    if not last_donation:
+        return True
+    try:
+        last = datetime.fromisoformat(str(last_donation).replace("Z", "+00:00")).replace(tzinfo=None)
+    except ValueError:
+        return True
+    months_ago = (datetime.now(timezone.utc).replace(tzinfo=None) - last).days / 30.0
+    return months_ago >= 3
+
+
 def create_request(requester, payload, notify_people=True):
     blood_type = validate_blood_type(payload.get("blood_type"))
     city = normalize_city(payload.get("city"))
@@ -116,22 +128,24 @@ def _match_and_alert(request_item):
     args = {
         "IndexName": "DonorMatchIndex",
         "KeyConditionExpression": "#bt = :bt AND begins_with(#mk, :ck)",
-        "ExpressionAttributeNames": {"#bt": "blood_type", "#mk": "match_key", "#de": "donation_eligible", "#av": "available"},
+        "ExpressionAttributeNames": {"#bt": "blood_type", "#mk": "match_key", "#av": "available"},
         "ExpressionAttributeValues": {
             ":bt": request_item["blood_type"],
             ":ck": city_key,
             ":t": True,
         },
-        "FilterExpression": "#de = :t AND #av = :t",
-        "Limit": MAX_MATCHES,
+        "FilterExpression": "#av = :t",
+        "Limit": MAX_MATCHES * 5,
     }
     resp = donors_table.query(**args)
     donors = resp.get("Items", [])
 
+    eligible = [d for d in donors if d.get("available") and donation_eligible(d.get("last_donation"))]
+
     matches_table = db.table("MATCHES_TABLE")
     now_iso = _iso(datetime.now(timezone.utc))
     alerted = 0
-    for donor in donors[:MAX_MATCHES]:
+    for donor in eligible[:MAX_MATCHES]:
         match_id = uuid.uuid4().hex
         match_item = {
             "match_id": match_id,

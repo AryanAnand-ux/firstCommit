@@ -98,6 +98,14 @@ python scripts/test_local.py
 - `scripts/test_local.py` now covers the **domain layer** with an in-memory dict-backed fake (FakeTable/FakeEnv: puts, gets, GSI queries for RequesterIndex / DonorMatchIndex / RequestIndex). Covers: create happy path, `is_donor` preservation, **duplicate-request 409**, cross-city/cross-user allowance, eligibility+availability match filter. **All 33 checks pass.**
 - Docs (README / architecture.md) refreshed for the new endpoint, GSI, alarms/dashboard/budget, assistant tool, and test coverage.
 
+### Loop 7 �?" Full audit + frontend redesign (hour of submission)
+- **Critical router bug fixed:** `Views` were keyed by view name but `route()` looked up `Views["#/"]` → `undefined()` crash on every navigation. Now uses a `ROUTES` hash map + `currentRoute`. Verified via headless Edge `--dump-dom` smoke test of all six routes.
+- **Signed-out dead zones removed:** Home/Requests feeds used to 401-call authed `/requests`. Now signed-out users see a crafted sign-in card; the public `/stats` payload drives a new **blood-need gap matrix** (8 rows: donor vs open-need bars + status pills) and a count-up stat band — a useful public landing for the demo.
+- **Backend integrity:** `update_request` 409 on non-open requests (no double SMS blast); `_match_and_alert` computes **live eligibility** from `last_donation` (query filters only `available`, post-filter in Python); `donor._put` uses `parse_bool` (fixes `bool("false")` → True); `expire_stale` newline; stats `uuid` removed; assistant facts aligned (50 kg, everyone 3 months) with the donor card.
+- **Deploy:** `deploy.ps1` + `deploy.sh` now run CloudFront `create-invalidation /*` after `s3 sync`.
+- **Visual redesign (no AI-slop):** Fraunces serif + Manrope UI via Google Fonts; oxblood/crimson on warm paper with dotted-grain texture; crafted SVG drop logo/favicon/empty states; live-dot eyebrow; animated gap bars; step tiles; pill nav (mobile scrollable); redesigned badges/toggles/chat/typing dots/sign-in cards; dark ink footer; `prefers-reduced-motion` guard.
+- `scripts/test_local.py` extended to **50 checks** (parse_bool table, donation_eligible dates, live-cooldown donor skipped at match time). All pass.
+
 ## Links
 
 - Event: <https://www.wemakedevs.org/aws/first-commit>

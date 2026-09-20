@@ -45,6 +45,15 @@ Step "Uploading frontend to S3 (bucket: $($map['FrontendBucket']))..."
 aws s3 sync "$root\frontend" "s3://$($map['FrontendBucket'])" --exclude "config.template.js" --region $Region 2>&1 | Out-Host
 if ($LASTEXITCODE -ne 0) { Fail "s3 sync failed" }
 
+Step "Invalidating CloudFront cache so new frontend goes live immediately..."
+$cfId = $map["CloudFrontDistributionId"]
+if ($cfId) {
+  aws cloudfront create-invalidation --distribution-id $cfId --paths "/*" --region $Region 2>&1 | Out-Null
+  if ($LASTEXITCODE -ne 0) { Write-Host "  [warn] invalidation failed - re-run manually if the page looks stale." -ForegroundColor Yellow }
+} else {
+  Write-Host "  [warn] CloudFrontDistributionId not found - skipping invalidation." -ForegroundColor Yellow
+}
+
 Write-Host ""
 Write-Host "Live URL : $($map['FrontendUrl'])" -ForegroundColor Green
 Write-Host "API      : $($map['ApiEndpoint'])" -ForegroundColor Green

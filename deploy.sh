@@ -28,6 +28,7 @@ url=$(echo "$OUT" | awk '/^FrontendUrl/{print $2}')
 bucket=$(echo "$OUT" | awk '/^FrontendBucket/{print $2}')
 pool=$(echo "$OUT" | awk '/^UserPoolId/{print $2}')
 client=$(echo "$OUT" | awk '/^UserPoolClientId/{print $2}')
+cf=$(echo "$OUT" | awk '/^CloudFrontDistributionId/{print $2}')
 [ -n "$api" ] || fail "Could not read stack outputs."
 
 step "Writing frontend/config.js..."
@@ -39,6 +40,14 @@ sed -e "s|{{API_BASE}}|$api|" \
 
 step "Uploading frontend to S3 (bucket: $bucket)..."
 aws s3 sync frontend "s3://$bucket" --exclude "config.template.js" --region "$REGION"
+
+step "Invalidating CloudFront cache..."
+if [ -n "$cf" ]; then
+  aws cloudfront create-invalidation --distribution-id "$cf" --paths "/*" --region "$REGION" >/dev/null 2>&1 \
+    || echo "  [warn] invalidation failed - re-run manually if the page looks stale."
+else
+  echo "  [warn] CloudFrontDistributionId not found - skipping invalidation."
+fi
 
 echo
 echo "Live URL : $url"

@@ -1,4 +1,3 @@
-import uuid
 from shared.api import ok, bad_request
 from shared import db
 

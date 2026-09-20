@@ -2,7 +2,8 @@ import json
 from datetime import datetime, timezone
 from shared.api import ok, bad_request, identity
 from shared import db
-from shared.validate import parse_body, clean_phone, normalize_city, BLOOD_TYPES
+from shared.validate import parse_body, parse_bool, clean_phone, normalize_city, BLOOD_TYPES
+from shared.domain import donation_eligible
 
 
 def lambda_handler(event, context):
@@ -19,6 +20,9 @@ def _get(user):
     item = db.table("DONORS_TABLE").get_item(Key={"donor_id": user["sub"]}).get("Item")
     if not item:
         item = {"donor_id": user["sub"], "email": user["email"], "is_donor": False}
+    else:
+        item = dict(item)
+        item["donation_eligible"] = donation_eligible(item.get("last_donation"))
     return ok(_public(item))
 
 
@@ -37,9 +41,9 @@ def _put(user, body):
 
     name = str(body.get("name") or "").strip() or user.get("email", "Donor")
     last_donation = str(body.get("last_donation") or "").strip()
-    available = bool(body.get("available", True))
+    available = parse_bool(body.get("available"), True)
 
-    eligible = _donation_eligible(last_donation)
+    eligible = donation_eligible(last_donation)
 
     db.table("DONORS_TABLE").put_item(
         Item={
@@ -62,17 +66,6 @@ def _put(user, body):
     )
 
     return ok(_public({"donor_id": user["sub"], "name": name, "phone": phone, "blood_type": blood_type, "city": city, "donation_eligible": eligible, "available": available, "is_donor": True}))
-
-
-def _donation_eligible(last_donation):
-    if not last_donation:
-        return True
-    try:
-        last = datetime.fromisoformat(last_donation.replace("Z", "+00:00")).replace(tzinfo=None)
-    except ValueError:
-        return True
-    months_ago = (datetime.now(timezone.utc).replace(tzinfo=None) - last).days / 30.0
-    return months_ago >= 3
 
 
 def _public(item):

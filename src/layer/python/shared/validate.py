@@ -40,6 +40,14 @@ def ensure_units(value):
     return max(1, min(units, 4))
 
 
+def parse_bool(value, default=False):
+    if isinstance(value, bool):
+        return value
+    if value is None:
+        return default
+    return str(value).strip().lower() in ("1", "true", "yes", "on")
+
+
 def parse_body(event):
     if not event.get("body"):
         return {}
