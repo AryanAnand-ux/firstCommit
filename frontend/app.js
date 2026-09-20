@@ -54,8 +54,17 @@ if (!cfg) {
 }
 
 /* ---------------- auth (Cognito) ---------------- */
+function makePool(cfg) {
+  try {
+    if (cfg && cfg.POOL_ID && cfg.CLIENT_ID) {
+      return new AmazonCognitoIdentity.CognitoUserPool({ UserPoolId: cfg.POOL_ID, ClientId: cfg.CLIENT_ID });
+    }
+  } catch (e) { /* bad/absent pool must never crash the SPA */ }
+  return null;
+}
+
 const Auth = {
-  _pool: cfg ? new AmazonCognitoIdentity.CognitoUserPool({ UserPoolId: cfg.POOL_ID, ClientId: cfg.CLIENT_ID }) : null,
+  _pool: makePool(cfg),
   email: localStorage.getItem("rakta_user") || "",
 
   _user() {
