@@ -66,7 +66,7 @@ Invoke-NativeStream { aws s3 sync "$root\frontend" "s3://$($map['FrontendBucket'
 
 Step "Invalidating CloudFront cache so new frontend goes live immediately..."
 $cfId = $map["CloudFrontDistributionId"]
-if ($cfId) {
+if ($cfId -and $cfId -ne "none") {
   $invalidation = Invoke-NativeCapture { aws cloudfront create-invalidation --distribution-id $cfId --paths "/*" --region $Region }
   if ($invalidation.ExitCode -ne 0) { Write-Host "  [warn] invalidation failed - re-run manually if the page looks stale." -ForegroundColor Yellow }
 } else {

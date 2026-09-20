@@ -446,42 +446,14 @@ Resources:
     Type: AWS::S3::Bucket
     Properties:
       BucketName: !Sub 'raktasetu-frontend-${AWS::AccountId}'
+      WebsiteConfiguration:
+        IndexDocument: index.html
+        ErrorDocument: index.html
       PublicAccessBlockConfiguration:
-        BlockPublicAcls: true
-        BlockPublicPolicy: true
+        BlockPublicAcls: false
+        BlockPublicPolicy: false
         IgnorePublicAcls: true
-        RestrictPublicBuckets: true
-
-  FrontendOAC:
-    Type: AWS::CloudFront::OriginAccessControl
-    Properties:
-      OriginAccessControlConfig:
-        Name: raktasetu-oac
-        OriginAccessControlOriginType: s3
-        SigningBehavior: always
-        SigningProtocol: sigv4
-
-  FrontendDistribution:
-    Type: AWS::CloudFront::Distribution
-    Properties:
-      DistributionConfig:
-        Origins:
-          - Id: S3Origin
-            DomainName: !GetAtt FrontendBucket.RegionalDomainName
-            OriginAccessControlId: !Ref FrontendOAC
-            S3OriginConfig:
-              OriginAccessIdentity: ''
-        Enabled: true
-        HttpVersion: http2
-        DefaultRootObject: index.html
-        PriceClass: PriceClass_100
-        ViewerCertificate:
-          CloudFrontDefaultCertificate: true
-        DefaultCacheBehavior:
-          TargetOriginId: S3Origin
-          ViewerProtocolPolicy: redirect-to-https
-          Compress: true
-          CachePolicyId: 658327ea-f89d-4fab-a63d-7e88639e58f6
+        RestrictPublicBuckets: false
 
   FrontendBucketPolicy:
     Type: AWS::S3::BucketPolicy
@@ -492,11 +464,8 @@ Resources:
           - Effect: Allow
             Action: s3:GetObject
             Principal:
-              Service: cloudfront.amazonaws.com
+              AWS: '*'
             Resource: !Sub arn:aws:s3:::${FrontendBucket}/*
-            Condition:
-              StringEquals:
-                AWS:SourceArn: !Sub arn:aws:cloudfront::${AWS::AccountId}:distribution/${FrontendDistribution}
 
   Api5xxAlarm:
     Type: AWS::CloudWatch::Alarm
@@ -589,7 +558,7 @@ Outputs:
     Value: !Sub https://${RaktaApi}.execute-api.${AWS::Region}.amazonaws.com/prod
   FrontendUrl:
     Description: Live web app URL (submission URL for Ship It track)
-    Value: !Sub https://${FrontendDistribution.DomainName}
+    Value: !GetAtt FrontendBucket.WebsiteURL
   FrontendBucket:
     Description: S3 bucket hosting the frontend
     Value: !Ref FrontendBucket
@@ -601,7 +570,7 @@ Outputs:
     Value: !Ref UserPoolClient
   CloudFrontDistributionId:
     Description: CloudFront distribution id (used for cache invalidation)
-    Value: !Ref FrontendDistribution
+    Value: none
   OpsDashboard:
     Description: CloudWatch dashboard name for live ops monitoring
     Value: !Ref RaktaDashboard
