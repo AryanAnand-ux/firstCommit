@@ -65,7 +65,7 @@ Resources:
         - email
       UsernameAttributes:
         - email
-      MfaConfiguration: OFF
+      MfaConfiguration: 'OFF'
       Schema:
         - Name: isDonor
           AttributeDataType: String
