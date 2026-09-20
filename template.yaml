@@ -19,31 +19,6 @@ Globals:
         MATCHES_TABLE: !Ref MatchesTable
         SMS_SENDER_ID: RAKTA
         REGION: !Ref AWS::Region
-    Policies:
-      - DynamoDBCrudPolicy:
-          TableName: !Ref UsersTable
-      - DynamoDBCrudPolicy:
-          TableName: !Ref DonorsTable
-      - DynamoDBCrudPolicy:
-          TableName: !Ref RequestsTable
-      - DynamoDBCrudPolicy:
-          TableName: !Ref MatchesTable
-      - Statement:
-          - Effect: Allow
-            Action:
-              - sns:Publish
-            Resource: '*'
-      - Statement:
-          - Effect: Allow
-            Action:
-              - bedrock:InvokeModel
-            Resource: '*'
-      - Statement:
-          - Effect: Allow
-            Action:
-              - logs:CreateLogStream
-              - logs:PutLogEvents
-            Resource: !Sub arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/*:*
 
 Parameters:
   AssistantModelId:
@@ -91,7 +66,6 @@ Resources:
       UsernameAttributes:
         - email
       MfaConfiguration: OFF
-      PreventUserExistenceErrors: ENABLED
       Schema:
         - Name: isDonor
           AttributeDataType: String
@@ -110,6 +84,7 @@ Resources:
     Properties:
       UserPoolId: !Ref UserPool
       GenerateSecret: false
+      PreventUserExistenceErrors: ENABLED
       SupportedIdentityProviders:
         - COGNITO
       ExplicitAuthFlows:
@@ -282,6 +257,31 @@ Resources:
     Properties:
       CodeUri: src/create_request
       Handler: app.lambda_handler
+      Policies: &FunctionPolicies
+        - DynamoDBCrudPolicy:
+            TableName: !Ref UsersTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref DonorsTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref RequestsTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref MatchesTable
+        - Statement:
+            - Effect: Allow
+              Action:
+                - sns:Publish
+              Resource: '*'
+        - Statement:
+            - Effect: Allow
+              Action:
+                - bedrock:InvokeModel
+              Resource: '*'
+        - Statement:
+            - Effect: Allow
+              Action:
+                - logs:CreateLogStream
+                - logs:PutLogEvents
+              Resource: !Sub arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/*:*
       Events:
         CreateRequest:
           Type: Api
@@ -295,6 +295,7 @@ Resources:
     Properties:
       CodeUri: src/list_requests
       Handler: app.lambda_handler
+      Policies: *FunctionPolicies
       Events:
         ListRequests:
           Type: Api
@@ -308,6 +309,7 @@ Resources:
     Properties:
       CodeUri: src/update_request
       Handler: app.lambda_handler
+      Policies: *FunctionPolicies
       Events:
         UpdateRequest:
           Type: Api
@@ -321,6 +323,7 @@ Resources:
     Properties:
       CodeUri: src/my_requests
       Handler: app.lambda_handler
+      Policies: *FunctionPolicies
       Events:
         MyRequests:
           Type: Api
@@ -334,6 +337,7 @@ Resources:
     Properties:
       CodeUri: src/donor
       Handler: app.lambda_handler
+      Policies: *FunctionPolicies
       Events:
         GetDonor:
           Type: Api
@@ -353,6 +357,7 @@ Resources:
     Properties:
       CodeUri: src/matches
       Handler: app.lambda_handler
+      Policies: *FunctionPolicies
       Events:
         ListMatches:
           Type: Api
@@ -366,6 +371,7 @@ Resources:
     Properties:
       CodeUri: src/respond_match
       Handler: app.lambda_handler
+      Policies: *FunctionPolicies
       Events:
         RespondMatch:
           Type: Api
@@ -379,6 +385,7 @@ Resources:
     Properties:
       CodeUri: src/stats
       Handler: app.lambda_handler
+      Policies: *FunctionPolicies
       Events:
         GetStats:
           Type: Api
@@ -397,6 +404,7 @@ Resources:
       Runtime: python3.12
       MemorySize: 512
       Timeout: 90
+      Policies: *FunctionPolicies
       Environment:
         Variables:
           USERS_TABLE: !Ref UsersTable
@@ -422,6 +430,7 @@ Resources:
     Properties:
       CodeUri: src/expire_stale
       Handler: app.lambda_handler
+      Policies: *FunctionPolicies
       Events:
         ScheduledExpire:
           Type: Schedule
